@@ -1,0 +1,43 @@
+Name: trader-execute-buy
+
+# Fires when the server calls openTrade() on the TraderAgent contract.
+# Executes a buy swap on Uniswap V2 using the Kwala smart wallet.
+
+Trigger:
+  TriggerSourceContract: "REPLACE_WITH_TRADERAGENT_CONTRACT_ADDRESS"
+  TriggerChainID: 137
+  TriggerEventName: "BuySignal(uint256,address,uint256,uint256)"
+
+# re.event(0) = tradeId
+# re.event(1) = token address
+# re.event(2) = amountWei (ETH in)
+# re.event(3) = entryPrice (USD × 1e8, for reference)
+
+Actions:
+  - Name: ExecuteBuy
+    Type: call
+    TargetContract: "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff"
+    TargetFunction: "swapExactETHForTokens(uint256,address[],address,uint256)"
+    TargetParams:
+      - "0"
+      - ["0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619", "re.event(1)"]
+      - "REPLACE_WITH_KWALA_SMART_WALLET"
+      - "9999999999"
+    ChainID: 137
+    SmartWallet: "REPLACE_WITH_KWALA_SMART_WALLET"
+    RetriesUntilSuccess: 2
+
+  - Name: NotifyServerBuyFired
+    Type: post
+    APIEndpoint: "https://REPLACE_WITH_YOUR_SERVER_URL/trade-fired"
+    APIPayload:
+      tradeId: "re.event(0)"
+      token: "re.event(1)"
+      amount: "re.event(2)"
+      direction: "BUY"
+      status: "submitted"
+    ChainID: 137
+    RetriesUntilSuccess: 3
+
+Execution:
+  Mode: sequential

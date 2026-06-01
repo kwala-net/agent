@@ -1,0 +1,23 @@
+Name: trader-observe
+
+Trigger:
+  TriggerPrice: "REPLACE_WITH_LIVE_ETH_PRICE"
+  TriggerChainID: 137
+  RecurringPrice: "REPLACE_WITH_LIVE_ETH_PRICE"
+  RepeatEvery: oracle
+  RecurringChainID: 137
+
+Actions:
+  - Name: NotifyAgentServer
+    Type: post
+    APIEndpoint: "https://REPLACE_WITH_YOUR_SERVER_URL/observe"
+    APIPayload:
+      signal: "price_update"
+      token: "ETH"
+      price: "re.event(0)"
+      timestamp: "re.event(1)"
+    ChainID: 137
+    RetriesUntilSuccess: 3
+
+Execution:
+  Mode: sequential

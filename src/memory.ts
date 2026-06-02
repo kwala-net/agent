@@ -19,7 +19,7 @@ let _contract: ethers.Contract | null = null;
 
 function contract(): ethers.Contract {
   if (!_contract) {
-    _provider = new ethers.JsonRpcProvider(process.env.POLYGON_RPC_URL!);
+    _provider = new ethers.JsonRpcProvider(process.env.ETH_SEPOLIA_RPC_URL!);
     _contract = new ethers.Contract(
       process.env.TRADERAGENT_CONTRACT_ADDRESS!,
       ABI,

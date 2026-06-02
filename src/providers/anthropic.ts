@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { LLMDecision, MarketObservation, Portfolio, Trade } from '../types';
 
-const SYSTEM_PROMPT = `You are a crypto trading agent managing a DeFi portfolio on Polygon.
+const SYSTEM_PROMPT = `You are a crypto trading agent managing a DeFi portfolio on Ethereum Sepolia.
 You receive a market observation every time the ETH price updates on-chain.
 You have access to your recent trade history and outcomes.
 

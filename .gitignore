@@ -4,6 +4,7 @@ node_modules/
 # build output
 dist/
 build/
+.next/
 
 # environment — never commit secrets
 .env
@@ -41,4 +42,3 @@ coverage/
 bun.lockb
 bun.lock
 .claude/
-

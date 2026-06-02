@@ -2,20 +2,19 @@ Name: trader-outcome
 
 Trigger:
   TriggerSourceContract: "REPLACE_WITH_KWALA_SMART_WALLET"
-  TriggerChainID: 137
+  TriggerChainID: 11155111
   RepeatEvery: address_tracking
 
 Actions:
   - Name: RecordOutcome
     Type: post
-    APIEndpoint: "https://REPLACE_WITH_YOUR_SERVER_URL/outcome"
+    APIEndpoint: "https://REPLACE_WITH_YOUR_SERVER_URL/api/outcome"
     APIPayload:
       wallet: "re.event(0)"
       token: "re.event(1)"
       amount: "re.event(2)"
       tx_hash: "re.event(3)"
       signal: "trade_settled"
-    ChainID: 137
     RetriesUntilSuccess: 5
 
 Execution:

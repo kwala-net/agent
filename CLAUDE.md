@@ -2,28 +2,28 @@
 
 ## What this project is
 
-A 24/7 autonomous crypto trading agent on Polygon (chainId 137). Kwala runs four on-chain workflows autonomously. The agent server (Express/TypeScript) receives webhooks from Kwala, calls a pluggable LLM for decisions, and writes all trade state back to a Solidity contract (`TraderAgent.sol`) that acts as the on-chain database.
+A 24/7 autonomous crypto trading agent on Ethereum Sepolia (chainId 11155111). Kwala runs four on-chain workflows autonomously. The Next.js app receives webhooks from Kwala via API routes, calls a pluggable LLM for decisions, renders a live dashboard, and writes all trade state back to a Solidity contract (`TraderAgent.sol`) that acts as the on-chain database.
 
 ## Commands
 
 ```bash
-npm run dev              # start server with ts-node (development)
-npm run build            # tsc → dist/
-npm start                # run compiled output
-npm run deploy:contract  # deploy TraderAgent.sol to Polygon
+npm run dev              # next dev — Next.js dev server on port 3000
+npm run build            # next build
+npm start                # next start — production server
+npm run deploy:contract  # deploy TraderAgent.sol to Sepolia (uses tsconfig.scripts.json)
 ```
 
-Node.js ≥ 18 required. TypeScript 4.9 targeting ES2019/CommonJS.
+Node.js ≥ 18 required. TypeScript 5.x. Two tsconfig files: `tsconfig.json` (Next.js, noEmit) and `tsconfig.scripts.json` (ts-node/CommonJS for deploy script).
 
 ## Key design decisions
 
-**No Redis.** All trade state lives in `TraderAgent.sol` on Polygon. `src/memory.ts` reads from the contract via ethers view calls. Price observations and LLM reasoning strings are kept in in-memory circular buffers inside `memory.ts` (they are ephemeral and high-frequency — storing them on-chain would cost significant gas).
+**No Redis.** All trade state lives in `TraderAgent.sol` on Ethereum Sepolia. `src/memory.ts` reads from the contract via ethers view calls. Price observations and LLM reasoning strings are kept in in-memory circular buffers inside `memory.ts` (they are ephemeral and high-frequency — storing them on-chain would cost significant gas).
 
 **Contract is the DB.** `TraderAgent.sol` stores every trade as a `Trade` struct with full data: token, amount, entry/exit price in USD×1e8, P&L in cents, timestamps, status enum, confidence (0–100), and LLM reasoning string. The contract has `getRecentTrades(n)` and `getOpenTrade(token)` view functions the server reads from.
 
-**Direction enum, not bool.** The contract uses `enum Direction { BUY, SELL, HOLD }`. BUY opens a position (`openTrade()` → emits `BuySignal`). SELL closes it (`emitSell()` → emits `SellSignal`). These are separate events so Kwala can use different Uniswap function signatures (buy = `swapExactETHForTokens`, sell = `swapExactTokensForETH`).
+**Direction enum, not bool.** The contract uses `enum Direction { BUY, SELL, HOLD }`. BUY opens a position (`openTrade()` → emits `BuySignal`). SELL closes it (`emitSell()` → emits `SellSignal`). These are separate events so Kwala can use different Uniswap V3 function signatures.
 
-**Pluggable LLM.** `src/llm.ts` is a factory. It reads `LLM_PROVIDER` env var (`custom` by default, `anthropic` opt-in) and delegates to `src/providers/custom.ts` or `src/providers/anthropic.ts`. Both export the same `getTradeDecision(...)` signature. The custom provider POSTs the context payload to `CUSTOM_LLM_URL` with no auth headers and expects `LLMDecision` JSON back.
+**Pluggable LLM.** `src/llm.ts` is a factory. It reads `LLM_PROVIDER` env var (`custom` by default, `anthropic` opt-in) and delegates to `src/providers/custom.ts` or `src/providers/anthropic.ts`. The custom provider POSTs the context payload to `CUSTOM_LLM_URL`. By default `CUSTOM_LLM_URL=http://localhost:3000/api/llm`, which hits the built-in momentum strategy in `app/api/llm/route.ts`. Point it elsewhere to use an external model.
 
 **Owner-only contract writes.** `PRIVATE_KEY` in `.env` is the deployer EOA. Only it can call `openTrade`, `emitSell`, `closeTrade`. This is NOT the Kwala smart wallet — that wallet only executes Uniswap swaps.
 
@@ -33,13 +33,19 @@ Node.js ≥ 18 required. TypeScript 4.9 targeting ES2019/CommonJS.
 
 | File | Role |
 |---|---|
-| `src/server.ts` | Express app. Four routes: `/observe` (price update), `/trade-fired` (swap submitted), `/outcome` (swap settled), `/status` (health). All handlers wrapped in try/catch; returns 500 on error so Kwala retries. |
+| `app/page.tsx` | Dashboard. Client component; polls `/api/status` every 30s. Shows portfolio, open positions, price ticks, LLM reasoning, trades table. |
+| `app/layout.tsx` | Root layout with dark background and metadata. |
+| `app/api/observe/route.ts` | `POST /api/observe` — Kwala price oracle webhook. Saves observation, calls LLM, opens/closes trades. |
+| `app/api/trade-fired/route.ts` | `POST /api/trade-fired` — Kwala swap-submitted confirmation. Logs acknowledgement. |
+| `app/api/outcome/route.ts` | `POST /api/outcome` — Kwala settlement webhook. Fetches exit price from Chainlink, calls `closeTrade`. |
+| `app/api/status/route.ts` | `GET /api/status` — returns portfolio, open trades, recent trades, prices, reasoning. |
+| `app/api/llm/route.ts` | `POST /api/llm` — built-in momentum strategy (stop-loss −2%, take-profit +3%, momentum BUY on 3-tick uptrend). Edit this to change strategy. |
 | `src/llm.ts` | Provider factory. Reads `LLM_PROVIDER`, delegates to provider module, catches errors and returns safe `HOLD`. |
 | `src/providers/custom.ts` | Default LLM provider. POSTs context to `CUSTOM_LLM_URL` via axios, no auth. |
 | `src/providers/anthropic.ts` | Anthropic provider. Uses `claude-opus-4-6`, 256 max tokens, JSON-only system prompt. |
-| `src/memory.ts` | Contract read layer (`getRecentTrades`, `findOpenTrade`) + in-memory buffers for prices and reasoning. |
+| `src/memory.ts` | Contract read layer (`getRecentTrades`, `findOpenTrade`) + in-memory circular buffers for prices and reasoning. |
 | `src/kwala.ts` | Contract write layer. `openTrade()`, `emitSell()`, `closeTrade()` — all use ethers v6, read from env. |
-| `src/portfolio.ts` | Fetches ETH balance (via RPC) and USDC balance (via ERC-20 `balanceOf` on `0x2791...`). ETH price from CoinGecko. |
+| `src/portfolio.ts` | Fetches ETH balance (via RPC) and USDC balance (via ERC-20 `balanceOf` on Sepolia USDC `0x1c7D...`). ETH price from Chainlink ETH/USD feed on Sepolia. |
 | `src/types.ts` | Shared interfaces: `Trade`, `LLMDecision`, `MarketObservation`, `Portfolio`, Kwala payload types. |
 | `contracts/TraderAgent.sol` | On-chain trade DB. Solidity 0.8.20. |
 | `scripts/deploy.ts` | Deploys `TraderAgent.sol`. Requires bytecode to be pasted in after compiling. |
@@ -52,28 +58,29 @@ Node.js ≥ 18 required. TypeScript 4.9 targeting ES2019/CommonJS.
 | `LLM_PROVIDER` | `custom` | `custom` or `anthropic` |
 | `CUSTOM_LLM_URL` | — | Required when `LLM_PROVIDER=custom` |
 | `ANTHROPIC_API_KEY` | — | Required when `LLM_PROVIDER=anthropic` |
-| `POLYGON_RPC_URL` | — | Polygon mainnet RPC |
+| `ETH_SEPOLIA_RPC_URL` | — | Ethereum Sepolia RPC |
 | `PRIVATE_KEY` | — | Deployer EOA (not Kwala smart wallet) |
 | `TRADERAGENT_CONTRACT_ADDRESS` | — | Set after `npm run deploy:contract` |
 | `KWALA_SMART_WALLET` | — | Kwala smart wallet address |
-| `PORT` | `3000` | Express listen port |
+| `PORT` | `3000` | Next.js listen port (`next dev -p $PORT`) |
 
 ## Kwala workflow summary
 
 | Workflow file | Trigger event | Action |
 |---|---|---|
-| `trader-observe.yaml` | ETH/USD oracle price update | POST to `/observe` |
-| `trader-execute-buy.yaml` | `BuySignal(uint256,address,uint256,uint256)` | `swapExactETHForTokens` on Uniswap V2, POST to `/trade-fired` |
-| `trader-execute-sell.yaml` | `SellSignal(uint256,address,uint256,uint256)` | `swapExactTokensForETH` on Uniswap V2, POST to `/trade-fired` |
-| `trader-outcome.yaml` | Token movement on Kwala smart wallet | POST to `/outcome` |
+| `trader-observe.yaml` | Chainlink ETH/USD feed update (Sepolia) | POST to `/api/observe` |
+| `trader-execute-buy.yaml` | `BuySignal(uint256,address,uint256,uint256)` | `exactInputSingle` on Uniswap V3, POST to `/api/trade-fired` |
+| `trader-execute-sell.yaml` | `SellSignal(uint256,address,uint256,uint256)` | `exactInputSingle` on Uniswap V3, POST to `/api/trade-fired` |
+| `trader-outcome.yaml` | Token movement on Kwala smart wallet | POST to `/api/outcome` |
 
-All workflows target chainId 137 (Polygon mainnet). `re.event(N)` in YAML params maps to positional event arguments (including indexed ones).
+All workflows target chainId 11155111 (Ethereum Sepolia). `re.event(N)` in YAML params maps to positional event arguments (including indexed ones).
 
-## Contract addresses (Polygon mainnet)
+## Contract addresses (Ethereum Sepolia)
 
-- Uniswap V2 Router: `0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff`
-- WETH: `0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619`
-- USDC: `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174`
+- Uniswap V3 SwapRouter02: `0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48e`
+- WETH: `0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14`
+- USDC (Circle): `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238`
+- Chainlink ETH/USD feed: `0x694AA1769357215DE4FAC081bf1f309aDC325306`
 
 ## Adding a new LLM provider
 

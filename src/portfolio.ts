@@ -1,25 +1,29 @@
 import { ethers } from 'ethers';
-import axios from 'axios';
 import { Portfolio } from './types';
 
-const USDC_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
+// Sepolia addresses
+const USDC_ADDRESS = '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238';
+const ETH_USD_FEED = '0x694AA1769357215DE4FAC081bf1f309aDC325306';
+
 const USDC_ABI = ['function balanceOf(address) view returns (uint256)'];
+const CHAINLINK_ABI = [
+  'function latestRoundData() view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)',
+];
 
 let provider: ethers.JsonRpcProvider | null = null;
 
 function getProvider(): ethers.JsonRpcProvider {
   if (!provider) {
-    provider = new ethers.JsonRpcProvider(process.env.POLYGON_RPC_URL!);
+    provider = new ethers.JsonRpcProvider(process.env.ETH_SEPOLIA_RPC_URL!);
   }
   return provider;
 }
 
 export async function getEthPrice(): Promise<number> {
-  const resp = await axios.get(
-    'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
-    { timeout: 10_000 }
-  );
-  return resp.data.ethereum.usd as number;
+  const p = getProvider();
+  const feed = new ethers.Contract(ETH_USD_FEED, CHAINLINK_ABI, p);
+  const [, answer] = await feed.latestRoundData();
+  return Number(answer) / 1e8;
 }
 
 export async function getPortfolio(walletAddress: string): Promise<Portfolio> {

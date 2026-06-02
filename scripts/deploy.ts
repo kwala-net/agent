@@ -45,9 +45,9 @@ async function main() {
   }
 
   const privateKey = process.env.PRIVATE_KEY;
-  const rpcUrl = process.env.POLYGON_RPC_URL;
+  const rpcUrl = process.env.ETH_SEPOLIA_RPC_URL;
   if (!privateKey) throw new Error('PRIVATE_KEY not set in .env');
-  if (!rpcUrl) throw new Error('POLYGON_RPC_URL not set in .env');
+  if (!rpcUrl) throw new Error('ETH_SEPOLIA_RPC_URL not set in .env');
 
   const provider = new ethers.JsonRpcProvider(rpcUrl);
   const wallet = new ethers.Wallet(privateKey, provider);
@@ -57,7 +57,7 @@ async function main() {
   console.log(`Deployer: ${wallet.address}`);
 
   const balance = await provider.getBalance(wallet.address);
-  console.log(`Balance: ${ethers.formatEther(balance)} MATIC`);
+  console.log(`Balance: ${ethers.formatEther(balance)} ETH`);
 
   const factory = new ethers.ContractFactory(ABI, BYTECODE, wallet);
   console.log('Deploying TraderAgent...');

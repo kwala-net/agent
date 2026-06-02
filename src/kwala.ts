@@ -16,7 +16,7 @@ let _contract: ethers.Contract | null = null;
 
 function contract(): ethers.Contract {
   if (!_contract) {
-    const provider = new ethers.JsonRpcProvider(process.env.POLYGON_RPC_URL!);
+    const provider = new ethers.JsonRpcProvider(process.env.ETH_SEPOLIA_RPC_URL!);
     _signer = new ethers.Wallet(process.env.PRIVATE_KEY!, provider);
     _contract = new ethers.Contract(
       process.env.TRADERAGENT_CONTRACT_ADDRESS!,

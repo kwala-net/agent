@@ -1,11 +1,12 @@
 Name: trader-execute-sell
 
 # Fires when the server calls emitSell() on the TraderAgent contract.
-# Executes a sell swap on Uniswap V2 using the Kwala smart wallet.
+# Executes a sell swap on Uniswap V3 using the Kwala smart wallet.
+# tokenIn = target token, tokenOut = WETH (ETH received), fee = 3000 (0.3%)
 
 Trigger:
   TriggerSourceContract: "REPLACE_WITH_TRADERAGENT_CONTRACT_ADDRESS"
-  TriggerChainID: 137
+  TriggerChainID: 11155111
   TriggerEventName: "SellSignal(uint256,address,uint256,uint256)"
 
 # re.event(0) = tradeId
@@ -16,28 +17,23 @@ Trigger:
 Actions:
   - Name: ExecuteSell
     Type: call
-    TargetContract: "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff"
-    TargetFunction: "swapExactTokensForETH(uint256,uint256,address[],address,uint256)"
+    TargetContract: "0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48e"
+    TargetFunction: "exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))"
     TargetParams:
-      - "re.event(2)"
-      - "0"
-      - ["re.event(1)", "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619"]
-      - "REPLACE_WITH_KWALA_SMART_WALLET"
-      - "9999999999"
-    ChainID: 137
+      - ["re.event(1)", "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14", "3000", "REPLACE_WITH_KWALA_SMART_WALLET", "re.event(2)", "0", "0"]
+    ChainID: 11155111
     SmartWallet: "REPLACE_WITH_KWALA_SMART_WALLET"
     RetriesUntilSuccess: 2
 
   - Name: NotifyServerSellFired
     Type: post
-    APIEndpoint: "https://REPLACE_WITH_YOUR_SERVER_URL/trade-fired"
+    APIEndpoint: "https://REPLACE_WITH_YOUR_SERVER_URL/api/trade-fired"
     APIPayload:
       tradeId: "re.event(0)"
       token: "re.event(1)"
       amount: "re.event(2)"
       direction: "SELL"
       status: "submitted"
-    ChainID: 137
     RetriesUntilSuccess: 3
 
 Execution:

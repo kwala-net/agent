@@ -4,11 +4,15 @@ import * as portfolio from '@/src/portfolio';
 
 export async function GET() {
   try {
+    const walletAddress = process.env.KWALA_SMART_WALLET;
+
     const [recentTrades, recentPrices, recentReasoning, port] = await Promise.all([
       memory.getRecentTrades(20),
       memory.getRecentPrices('ETH', 20),
       memory.getRecentReasoning(5),
-      portfolio.getPortfolio(process.env.KWALA_SMART_WALLET!),
+      walletAddress
+        ? portfolio.getPortfolio(walletAddress)
+        : Promise.resolve({ eth_balance: 0, usdc_balance: 0, total_value_usd: 0 }),
     ]);
 
     const openTrades = recentTrades.filter(

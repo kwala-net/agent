@@ -10,10 +10,17 @@ A 24/7 autonomous crypto trading agent on Ethereum Sepolia (chainId 11155111). K
 npm run dev              # next dev — Next.js dev server on port 3000
 npm run build            # next build
 npm start                # next start — production server
-npm run deploy:contract  # deploy TraderAgent.sol to Sepolia (uses tsconfig.scripts.json)
+npm run deploy:contract  # forge script deploy to Sepolia (requires forge in PATH)
 ```
 
-Node.js ≥ 18 required. TypeScript 5.x. Two tsconfig files: `tsconfig.json` (Next.js, noEmit) and `tsconfig.scripts.json` (ts-node/CommonJS for deploy script).
+```bash
+# Foundry (run from contracts/)
+forge build              # compile
+forge test               # run tests
+forge script script/Deploy.s.sol:DeployTraderAgent --rpc-url $ETH_SEPOLIA_RPC_URL --broadcast -vvv
+```
+
+Node.js ≥ 18 required. TypeScript 5.x. Foundry required for contract work — install via https://getfoundry.sh then run `forge install` inside `contracts/` to pull `forge-std`.
 
 ## Key design decisions
 
@@ -47,8 +54,10 @@ Node.js ≥ 18 required. TypeScript 5.x. Two tsconfig files: `tsconfig.json` (Ne
 | `src/kwala.ts` | Contract write layer. `openTrade()`, `emitSell()`, `closeTrade()` — all use ethers v6, read from env. |
 | `src/portfolio.ts` | Fetches ETH balance (via RPC) and USDC balance (via ERC-20 `balanceOf` on Sepolia USDC `0x1c7D...`). ETH price from Chainlink ETH/USD feed on Sepolia. |
 | `src/types.ts` | Shared interfaces: `Trade`, `LLMDecision`, `MarketObservation`, `Portfolio`, Kwala payload types. |
-| `contracts/TraderAgent.sol` | On-chain trade DB. Solidity 0.8.20. |
-| `scripts/deploy.ts` | Deploys `TraderAgent.sol`. Requires bytecode to be pasted in after compiling. |
+| `contracts/src/TraderAgent.sol` | On-chain trade DB. Solidity 0.8.20. |
+| `contracts/script/Deploy.s.sol` | Foundry deploy script. Reads `PRIVATE_KEY` from env, broadcasts to Sepolia. |
+| `contracts/test/TraderAgent.t.sol` | Forge unit tests — ownership, full trade lifecycle, view functions. |
+| `contracts/foundry.toml` | Foundry config: `solc=0.8.20`, rpc alias `sepolia`, etherscan verify config. |
 | `kwala/*.yaml` | Kwala workflow configs. Not code — deployed via Kwala dashboard or MCP. |
 
 ## Environment variables

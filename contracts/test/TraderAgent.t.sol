@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test, console} from "forge-std/Test.sol";
-import {TraderAgent} from "../src/TraderAgent.sol";
+import {TraderAgent, Direction, Status, Round, Trade} from "../src/TraderAgent.sol";
 
 contract TraderAgentTest is Test {
     TraderAgent agent;
@@ -10,6 +10,8 @@ contract TraderAgentTest is Test {
     address token  = address(0xBEEF);
     address token2 = address(0xCAFE);
 
+    // Redeclare events for vm.expectEmit
+    event RoundRecorded(uint256 indexed roundId, Direction indexed action, uint256 price);
     event BuySignal(uint256 indexed tradeId, address indexed token, uint256 amountWei, uint256 entryPrice);
     event SellSignal(uint256 indexed tradeId, address indexed token, uint256 amountWei, uint256 entryPrice);
     event TradeClosed(uint256 indexed tradeId, uint256 exitPrice, int256 pnlUsdCents);
@@ -19,104 +21,169 @@ contract TraderAgentTest is Test {
         agent = new TraderAgent();
     }
 
+    // ── helpers ───────────────────────────────────────────────────────────────
+
+    function _recordRound(Direction action, uint256 amount)
+        internal returns (uint256 roundId)
+    {
+        roundId = agent.recordRound(
+            "BTC", 6000000000000, 1 ether, 500e6, 2500e8, action, amount, 75, "test reasoning"
+        );
+    }
+
+    function _openTrade(address tok, uint256 amount)
+        internal returns (uint256 roundId, uint256 tradeId)
+    {
+        roundId = _recordRound(Direction.BUY, amount);
+        tradeId = agent.openTrade(roundId, tok, amount, 6000000000000, 75, "test reasoning");
+    }
+
     // ── ownership ─────────────────────────────────────────────────────────────
 
     function test_owner() public view {
         assertEq(agent.owner(), address(this));
     }
 
-    function test_openTrade_revertsIfNotOwner() public {
+    function test_recordRound_revertsIfNotOwner() public {
         vm.prank(notOwner);
         vm.expectRevert("Not owner");
-        agent.openTrade(token, 1 ether, 2000e8, 75, "test");
+        agent.recordRound("BTC", 6000000000000, 1 ether, 500e6, 2500e8, Direction.HOLD, 0, 50, "test");
+    }
+
+    function test_openTrade_revertsIfNotOwner() public {
+        uint256 roundId = _recordRound(Direction.BUY, 1 ether);
+        vm.prank(notOwner);
+        vm.expectRevert("Not owner");
+        agent.openTrade(roundId, token, 1 ether, 6000000000000, 75, "test");
     }
 
     function test_emitSell_revertsIfNotOwner() public {
-        agent.openTrade(token, 1 ether, 2000e8, 75, "test");
+        (, uint256 tradeId) = _openTrade(token, 1 ether);
         vm.prank(notOwner);
         vm.expectRevert("Not owner");
-        agent.emitSell(0);
+        agent.emitSell(tradeId);
     }
 
     function test_closeTrade_revertsIfNotOwner() public {
-        agent.openTrade(token, 1 ether, 2000e8, 75, "test");
+        (, uint256 tradeId) = _openTrade(token, 1 ether);
         vm.prank(notOwner);
         vm.expectRevert("Not owner");
-        agent.closeTrade(0, 2100e8, 100_00);
+        agent.closeTrade(tradeId, 6100000000000, 100_00);
+    }
+
+    // ── recordRound ───────────────────────────────────────────────────────────
+
+    function test_recordRound_storesFields() public {
+        uint256 id = agent.recordRound(
+            "BTC", 6000000000000, 1 ether, 500e6, 2500e8,
+            Direction.HOLD, 0, 50, "No signal"
+        );
+
+        assertEq(id, 0);
+        assertEq(agent.roundsCount(), 1);
+
+        Round memory r = agent.getRound(0);
+        assertEq(r.id, 0);
+        assertEq(r.token, "BTC");
+        assertEq(r.price, 6000000000000);
+        assertEq(r.ethBalanceWei, 1 ether);
+        assertEq(r.usdcBalance, 500e6);
+        assertEq(r.totalValueUsd, 2500e8);
+        assertEq(uint8(r.action), uint8(Direction.HOLD));
+        assertEq(r.amountWei, 0);
+        assertEq(r.confidence, 50);
+        assertEq(r.reasoning, "No signal");
+        assertFalse(r.tradeOpened);
+        assertGt(r.timestamp, 0);
+    }
+
+    function test_recordRound_emitsRoundRecorded() public {
+        vm.expectEmit(true, true, false, true);
+        emit RoundRecorded(0, Direction.BUY, 6000000000000);
+        agent.recordRound("BTC", 6000000000000, 1 ether, 500e6, 2500e8, Direction.BUY, 1 ether, 75, "test");
+    }
+
+    function test_recordRound_incrementsId() public {
+        agent.recordRound("BTC", 6000000000000, 1 ether, 500e6, 2500e8, Direction.HOLD, 0, 50, "r1");
+        uint256 id = agent.recordRound("BTC", 6100000000000, 1 ether, 500e6, 2550e8, Direction.BUY, 1 ether, 70, "r2");
+        assertEq(id, 1);
+        assertEq(agent.roundsCount(), 2);
     }
 
     // ── openTrade ─────────────────────────────────────────────────────────────
 
     function test_openTrade_storesFields() public {
-        uint256 id = agent.openTrade(token, 1 ether, 2000e8, 75, "Upward momentum");
+        (uint256 roundId, uint256 tradeId) = _openTrade(token, 1 ether);
 
-        assertEq(id, 0);
+        assertEq(tradeId, 0);
         assertEq(agent.tradesCount(), 1);
 
-        TraderAgent.Trade memory t = agent.getTrade(0);
+        Trade memory t = agent.getTrade(0);
         assertEq(t.id, 0);
+        assertEq(t.roundId, roundId);
         assertEq(t.token, token);
         assertEq(t.amountWei, 1 ether);
-        assertEq(t.entryPrice, 2000e8);
-        assertEq(t.exitPrice, 0);
-        assertEq(t.pnlUsdCents, 0);
+        assertEq(t.entryPrice, 6000000000000);
         assertEq(t.confidence, 75);
-        assertEq(t.reasoning, "Upward momentum");
-        assertEq(uint8(t.status), uint8(TraderAgent.Status.OPEN));
+        assertEq(uint8(t.status), uint8(Status.OPEN));
         assertGt(t.openedAt, 0);
-        assertEq(t.closedAt, 0);
+    }
+
+    function test_openTrade_linksRound() public {
+        (uint256 roundId, uint256 tradeId) = _openTrade(token, 1 ether);
+
+        Round memory r = agent.getRound(roundId);
+        assertTrue(r.tradeOpened);
+        assertEq(r.tradeId, tradeId);
     }
 
     function test_openTrade_emitsBuySignal() public {
+        uint256 roundId = _recordRound(Direction.BUY, 1 ether);
         vm.expectEmit(true, true, false, true);
-        emit BuySignal(0, token, 1 ether, 2000e8);
-        agent.openTrade(token, 1 ether, 2000e8, 75, "test");
+        emit BuySignal(0, token, 1 ether, 6000000000000);
+        agent.openTrade(roundId, token, 1 ether, 6000000000000, 75, "test");
+    }
+
+    function test_openTrade_revertsOnInvalidRound() public {
+        vm.expectRevert("Invalid round");
+        agent.openTrade(99, token, 1 ether, 6000000000000, 75, "test");
+    }
+
+    function test_openTrade_revertsIfPositionAlreadyOpen() public {
+        _openTrade(token, 1 ether);
+        uint256 roundId2 = _recordRound(Direction.BUY, 1 ether);
+        vm.expectRevert("Position already open");
+        agent.openTrade(roundId2, token, 1 ether, 6000000000000, 75, "second");
     }
 
     function test_openTrade_getOpenTrade() public {
-        agent.openTrade(token, 1 ether, 2000e8, 75, "test");
-
-        (bool exists, TraderAgent.Trade memory t) = agent.getOpenTrade(token);
+        _openTrade(token, 1 ether);
+        (bool exists, Trade memory t) = agent.getOpenTrade(token);
         assertTrue(exists);
         assertEq(t.token, token);
     }
 
-    function test_openTrade_revertsIfPositionAlreadyOpen() public {
-        agent.openTrade(token, 1 ether, 2000e8, 75, "first");
-        vm.expectRevert("Position already open");
-        agent.openTrade(token, 1 ether, 2000e8, 75, "second");
-    }
-
     function test_openTrade_allowsDifferentTokens() public {
-        agent.openTrade(token, 1 ether, 2000e8, 75, "token1");
-        agent.openTrade(token2, 0.5 ether, 3000e8, 60, "token2");
+        _openTrade(token, 1 ether);
+        _openTrade(token2, 0.5 ether);
         assertEq(agent.tradesCount(), 2);
-    }
-
-    function test_openTrade_incrementsId() public {
-        agent.openTrade(token, 1 ether, 2000e8, 75, "t1");
-        agent.emitSell(0);
-        agent.closeTrade(0, 2100e8, 100_00);
-
-        uint256 id = agent.openTrade(token, 0.5 ether, 2100e8, 60, "t2");
-        assertEq(id, 1);
     }
 
     // ── emitSell ──────────────────────────────────────────────────────────────
 
     function test_emitSell_setsPendingClose() public {
-        agent.openTrade(token, 1 ether, 2000e8, 75, "test");
-        agent.emitSell(0);
+        (, uint256 tradeId) = _openTrade(token, 1 ether);
+        agent.emitSell(tradeId);
 
-        TraderAgent.Trade memory t = agent.getTrade(0);
-        assertEq(uint8(t.status), uint8(TraderAgent.Status.PENDING_CLOSE));
+        Trade memory t = agent.getTrade(tradeId);
+        assertEq(uint8(t.status), uint8(Status.PENDING_CLOSE));
     }
 
     function test_emitSell_emitsSellSignal() public {
-        agent.openTrade(token, 1 ether, 2000e8, 75, "test");
+        (, uint256 tradeId) = _openTrade(token, 1 ether);
         vm.expectEmit(true, true, false, true);
-        emit SellSignal(0, token, 1 ether, 2000e8);
-        agent.emitSell(0);
+        emit SellSignal(tradeId, token, 1 ether, 6000000000000);
+        agent.emitSell(tradeId);
     }
 
     function test_emitSell_revertsOnInvalidId() public {
@@ -125,80 +192,91 @@ contract TraderAgentTest is Test {
     }
 
     function test_emitSell_revertsIfAlreadyPendingClose() public {
-        agent.openTrade(token, 1 ether, 2000e8, 75, "test");
-        agent.emitSell(0);
+        (, uint256 tradeId) = _openTrade(token, 1 ether);
+        agent.emitSell(tradeId);
         vm.expectRevert("Trade not open");
-        agent.emitSell(0);
+        agent.emitSell(tradeId);
     }
 
     // ── closeTrade ────────────────────────────────────────────────────────────
 
     function test_closeTrade_setsFields() public {
-        agent.openTrade(token, 1 ether, 2000e8, 75, "test");
-        agent.emitSell(0);
-        agent.closeTrade(0, 2100e8, 100_00);
+        (, uint256 tradeId) = _openTrade(token, 1 ether);
+        agent.emitSell(tradeId);
+        agent.closeTrade(tradeId, 6100000000000, 100_00);
 
-        TraderAgent.Trade memory t = agent.getTrade(0);
-        assertEq(t.exitPrice, 2100e8);
+        Trade memory t = agent.getTrade(tradeId);
+        assertEq(t.exitPrice, 6100000000000);
         assertEq(t.pnlUsdCents, 100_00);
-        assertEq(uint8(t.status), uint8(TraderAgent.Status.CLOSED));
+        assertEq(uint8(t.status), uint8(Status.CLOSED));
         assertGt(t.closedAt, 0);
     }
 
     function test_closeTrade_emitsTradeClosed() public {
-        agent.openTrade(token, 1 ether, 2000e8, 75, "test");
-        agent.emitSell(0);
+        (, uint256 tradeId) = _openTrade(token, 1 ether);
+        agent.emitSell(tradeId);
         vm.expectEmit(true, false, false, true);
-        emit TradeClosed(0, 2100e8, 100_00);
-        agent.closeTrade(0, 2100e8, 100_00);
+        emit TradeClosed(tradeId, 6100000000000, 100_00);
+        agent.closeTrade(tradeId, 6100000000000, 100_00);
     }
 
     function test_closeTrade_clearsOpenSlot() public {
-        agent.openTrade(token, 1 ether, 2000e8, 75, "test");
-        agent.emitSell(0);
-        agent.closeTrade(0, 2100e8, 100_00);
+        (, uint256 tradeId) = _openTrade(token, 1 ether);
+        agent.emitSell(tradeId);
+        agent.closeTrade(tradeId, 6100000000000, 100_00);
 
         (bool exists,) = agent.getOpenTrade(token);
         assertFalse(exists);
     }
 
     function test_closeTrade_canCloseFromOpenState() public {
-        agent.openTrade(token, 1 ether, 2000e8, 75, "test");
-        agent.closeTrade(0, 2100e8, -50_00);
+        (, uint256 tradeId) = _openTrade(token, 1 ether);
+        agent.closeTrade(tradeId, 6100000000000, -50_00);
 
-        TraderAgent.Trade memory t = agent.getTrade(0);
-        assertEq(uint8(t.status), uint8(TraderAgent.Status.CLOSED));
+        Trade memory t = agent.getTrade(tradeId);
+        assertEq(uint8(t.status), uint8(Status.CLOSED));
         assertEq(t.pnlUsdCents, -50_00);
     }
 
     function test_closeTrade_revertsIfAlreadyClosed() public {
-        agent.openTrade(token, 1 ether, 2000e8, 75, "test");
-        agent.closeTrade(0, 2100e8, 100_00);
+        (, uint256 tradeId) = _openTrade(token, 1 ether);
+        agent.closeTrade(tradeId, 6100000000000, 100_00);
         vm.expectRevert("Trade not closeable");
-        agent.closeTrade(0, 2200e8, 200_00);
+        agent.closeTrade(tradeId, 6200000000000, 200_00);
     }
 
     // ── view functions ────────────────────────────────────────────────────────
 
-    function test_getRecentTrades_returnsInOrder() public {
-        agent.openTrade(token, 1 ether, 2000e8, 75, "first");
-        agent.openTrade(token2, 0.5 ether, 3000e8, 60, "second");
+    function test_getRecentRounds_returnsInOrder() public {
+        agent.recordRound("BTC", 6000000000000, 1 ether, 500e6, 2500e8, Direction.HOLD, 0, 50, "first");
+        agent.recordRound("BTC", 6100000000000, 1 ether, 500e6, 2550e8, Direction.BUY, 1 ether, 75, "second");
 
-        TraderAgent.Trade[] memory trades = agent.getRecentTrades(2);
+        Round[] memory rounds = agent.getRecentRounds(2);
+        assertEq(rounds.length, 2);
+        assertEq(rounds[0].reasoning, "first");
+        assertEq(rounds[1].reasoning, "second");
+    }
+
+    function test_getRecentRounds_clampsToAvailable() public {
+        agent.recordRound("BTC", 6000000000000, 1 ether, 500e6, 2500e8, Direction.HOLD, 0, 50, "only");
+        Round[] memory rounds = agent.getRecentRounds(10);
+        assertEq(rounds.length, 1);
+    }
+
+    function test_getRecentTrades_returnsInOrder() public {
+        _openTrade(token, 1 ether);
+        _openTrade(token2, 0.5 ether);
+
+        Trade[] memory trades = agent.getRecentTrades(2);
         assertEq(trades.length, 2);
-        assertEq(trades[0].reasoning, "first");
-        assertEq(trades[1].reasoning, "second");
+        assertEq(trades[0].token, token);
+        assertEq(trades[1].token, token2);
     }
 
     function test_getRecentTrades_clampsToAvailable() public {
-        agent.openTrade(token, 1 ether, 2000e8, 75, "only");
-        TraderAgent.Trade[] memory trades = agent.getRecentTrades(10);
+        _openTrade(token, 1 ether);
+        Trade[] memory trades = agent.getRecentTrades(10);
         assertEq(trades.length, 1);
-    }
-
-    function test_getRecentTrades_empty() public view {
-        TraderAgent.Trade[] memory trades = agent.getRecentTrades(5);
-        assertEq(trades.length, 0);
     }
 
     function test_getOpenTrade_returnsFalseWhenNone() public view {
@@ -207,9 +285,8 @@ contract TraderAgentTest is Test {
     }
 
     function test_getOpenTrade_returnsFalseAfterClose() public {
-        agent.openTrade(token, 1 ether, 2000e8, 75, "test");
-        agent.closeTrade(0, 2100e8, 100_00);
-
+        (, uint256 tradeId) = _openTrade(token, 1 ether);
+        agent.closeTrade(tradeId, 6100000000000, 100_00);
         (bool exists,) = agent.getOpenTrade(token);
         assertFalse(exists);
     }

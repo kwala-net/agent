@@ -6,7 +6,8 @@ import type { LLMDecision, MarketObservation, Portfolio, Trade } from '@/src/typ
 
 interface RequestBody {
   market: MarketObservation & { current_price_usd: number };
-  portfolio: Portfolio;
+  // eth_balance_wei is not sent by providers — it's only used for contract writes
+  portfolio: Omit<Portfolio, 'eth_balance_wei'>;
   recent_trades: Trade[];
   last_n_prices: number[];
   llm_reasoning_history: string[];

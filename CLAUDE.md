@@ -77,12 +77,12 @@ Node.js ≥ 18 required. TypeScript 5.x. Foundry required for contract work — 
 
 | Workflow file | Trigger event | Action |
 |---|---|---|
-| `trader-observe.yaml` | Chainlink ETH/USD feed update (Sepolia) | POST to `/api/observe` |
+| `trader-observe-btc.yaml` | Cron every 1 hour — calls `latestAnswer()` on Chainlink BTC/USD feed | POST to `/api/observe` |
 | `trader-execute-buy.yaml` | `BuySignal(uint256,address,uint256,uint256)` | `exactInputSingle` on Uniswap V3, POST to `/api/trade-fired` |
 | `trader-execute-sell.yaml` | `SellSignal(uint256,address,uint256,uint256)` | `exactInputSingle` on Uniswap V3, POST to `/api/trade-fired` |
 | `trader-outcome.yaml` | Token movement on Kwala smart wallet | POST to `/api/outcome` |
 
-All workflows target chainId 11155111 (Ethereum Sepolia). `re.event(N)` in YAML params maps to positional event arguments (including indexed ones).
+All workflows target chainId 11155111 (Ethereum Sepolia). Chainlink `latestAnswer()` returns a single `int256` referenced as `re.result(0)`. The `/api/observe` route divides the raw answer by 1e8 to get the USD price. `timestamp` is optional in the observe payload — the server uses `Date.now()` if omitted.
 
 ## Contract addresses (Ethereum Sepolia)
 

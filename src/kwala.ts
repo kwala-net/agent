@@ -1,10 +1,16 @@
 import { ethers } from 'ethers';
-import { KwalaTradeFirePayload } from './types';
+import { KwalaTradeFirePayload, TradeAction } from './types';
+
+const DIRECTION: Record<TradeAction, number> = { BUY: 0, SELL: 1, HOLD: 2 };
 
 const ABI = [
-  'function openTrade(address token, uint256 amountWei, uint256 entryPrice, uint8 confidence, string reasoning) external returns (uint256)',
+  // write
+  'function recordRound(string token, uint256 price, uint256 ethBalanceWei, uint256 usdcBalance, uint256 totalValueUsd, uint8 action, uint256 amountWei, uint8 confidence, string reasoning) external returns (uint256)',
+  'function openTrade(uint256 roundId, address token, uint256 amountWei, uint256 entryPrice, uint8 confidence, string reasoning) external returns (uint256)',
   'function emitSell(uint256 tradeId) external',
   'function closeTrade(uint256 tradeId, uint256 exitPrice, int256 pnlUsdCents) external',
+  // events
+  'event RoundRecorded(uint256 indexed roundId, uint8 indexed action, uint256 price)',
   'event BuySignal(uint256 indexed tradeId, address indexed token, uint256 amountWei, uint256 entryPrice)',
   'event SellSignal(uint256 indexed tradeId, address indexed token, uint256 amountWei, uint256 entryPrice)',
 ];
@@ -27,38 +33,76 @@ function contract(): ethers.Contract {
   return _contract;
 }
 
-/// Opens a BUY position on-chain; emits BuySignal for Kwala to execute the swap.
+function parseEvent(logs: readonly ethers.Log[], name: string): ethers.LogDescription | null {
+  for (const log of logs) {
+    try {
+      const parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
+      if (parsed?.name === name) return parsed;
+    } catch { /* skip unrelated logs */ }
+  }
+  return null;
+}
+
+/// Records one full observe→decide cycle on-chain.
+/// Returns the on-chain roundId.
+export async function recordRound(
+  token: string,
+  priceUsd: number,
+  ethBalanceWei: string,
+  usdcBalance: number,
+  totalValueUsd: number,
+  action: TradeAction,
+  amountWei: bigint,
+  confidence: number,
+  reasoning: string
+): Promise<number> {
+  const priceRaw     = BigInt(Math.round(priceUsd * 1e8));
+  const usdcRaw      = BigInt(Math.round(usdcBalance * 1e6));
+  const totalRaw     = BigInt(Math.round(totalValueUsd * 1e8));
+  const confidencePct = Math.min(100, Math.round(confidence * 100));
+  const actionEnum   = DIRECTION[action];
+
+  console.log(`[kwala] recordRound token=${token} price=${priceUsd} action=${action}`);
+
+  const tx = await contract().recordRound(
+    token, priceRaw, BigInt(ethBalanceWei), usdcRaw, totalRaw,
+    actionEnum, amountWei, confidencePct, reasoning
+  );
+  const receipt = await tx.wait();
+
+  const evt = parseEvent(receipt.logs, 'RoundRecorded');
+  if (!evt) throw new Error(`[kwala] RoundRecorded event not found in tx ${receipt.hash}`);
+  const roundId = Number(evt.args.roundId);
+
+  console.log(`[kwala] RoundRecorded roundId=${roundId} tx=${receipt.hash}`);
+  return roundId;
+}
+
+/// Opens a BUY position linked to a round; emits BuySignal for Kwala.
 export async function openTrade(
+  roundId: number,
   token: string,
   amountWei: bigint,
   entryPriceUsd: number,
   confidence: number,
   reasoning: string
 ): Promise<{ tradeId: number; txHash: string }> {
-  const entryPrice = BigInt(Math.round(entryPriceUsd * 1e8));
-  const confidencePct = Math.min(100, Math.round(confidence * 100)) as unknown as number;
+  const entryPrice    = BigInt(Math.round(entryPriceUsd * 1e8));
+  const confidencePct = Math.min(100, Math.round(confidence * 100));
 
-  console.log(`[kwala] openTrade token=${token} amountWei=${amountWei} price=${entryPriceUsd}`);
+  console.log(`[kwala] openTrade roundId=${roundId} token=${token} price=${entryPriceUsd}`);
 
-  const tx = await contract().openTrade(token, amountWei, entryPrice, confidencePct, reasoning);
+  const tx = await contract().openTrade(roundId, token, amountWei, entryPrice, confidencePct, reasoning);
   const receipt = await tx.wait();
 
-  let tradeId = 0;
-  for (const log of receipt.logs) {
-    try {
-      const parsed = iface.parseLog({ topics: log.topics, data: log.data });
-      if (parsed && parsed.name === 'BuySignal') {
-        tradeId = Number(parsed.args.tradeId);
-        break;
-      }
-    } catch { /* skip unrelated logs */ }
-  }
+  const evt = parseEvent(receipt.logs, 'BuySignal');
+  const tradeId = evt ? Number(evt.args.tradeId) : 0;
 
   console.log(`[kwala] BuySignal mined tradeId=${tradeId} tx=${receipt.hash}`);
   return { tradeId, txHash: receipt.hash as string };
 }
 
-/// Marks the trade pending-close on-chain; emits SellSignal for Kwala to execute the swap.
+/// Marks the trade pending-close; emits SellSignal for Kwala.
 export async function emitSell(tradeId: number): Promise<string> {
   console.log(`[kwala] emitSell tradeId=${tradeId}`);
   const tx = await contract().emitSell(tradeId);
@@ -74,7 +118,7 @@ export async function closeTrade(
   pnlUsd: number
 ): Promise<void> {
   const exitPrice = BigInt(Math.round(exitPriceUsd * 1e8));
-  const pnlCents = BigInt(Math.round(pnlUsd * 100));
+  const pnlCents  = BigInt(Math.round(pnlUsd * 100));
 
   console.log(`[kwala] closeTrade tradeId=${tradeId} exit=${exitPriceUsd} pnl=${pnlUsd.toFixed(2)}`);
   const tx = await contract().closeTrade(tradeId, exitPrice, pnlCents);
@@ -84,6 +128,6 @@ export async function closeTrade(
 
 export function acknowledgeKwalaFired(payload: KwalaTradeFirePayload): void {
   console.log(
-    `[kwala] swap confirmed by Kwala — tradeId=${payload.tradeId} direction=${payload.direction} token=${payload.token} status=${payload.status}`
+    `[kwala] swap confirmed — tradeId=${payload.tradeId} direction=${payload.direction} token=${payload.token} status=${payload.status}`
   );
 }

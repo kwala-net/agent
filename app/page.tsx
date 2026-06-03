@@ -5,8 +5,25 @@ import { useCallback, useEffect, useState } from 'react';
 type TradeStatus = 'open' | 'pending_close' | 'closed' | 'failed';
 type TradeAction = 'BUY' | 'SELL' | 'HOLD';
 
+interface Round {
+  id: string;
+  timestamp: number;
+  token: string;
+  price: number;
+  eth_balance_wei: string;
+  usdc_balance: number;
+  total_value_usd: number;
+  action: TradeAction;
+  amount_eth: number;
+  confidence: number;
+  reasoning: string;
+  trade_id: string | null;
+  trade_opened: boolean;
+}
+
 interface Trade {
   id: string;
+  round_id: string;
   action: TradeAction;
   token: string;
   amount_eth: number;
@@ -21,6 +38,7 @@ interface Trade {
 
 interface Portfolio {
   eth_balance: number;
+  eth_balance_wei: string;
   usdc_balance: number;
   total_value_usd: number;
 }
@@ -28,6 +46,7 @@ interface Portfolio {
 interface StatusData {
   status: string;
   portfolio: Portfolio;
+  recentRounds: Round[];
   recentTrades: Trade[];
   recentPrices: number[];
   openTrades: Trade[];
@@ -248,7 +267,7 @@ export default function Dashboard() {
               )}
             </Card>
 
-            <Card title="Recent Price Ticks (ETH/USD)">
+            <Card title="Recent Price Ticks (BTC/USD)">
               {data.recentPrices.length === 0 ? (
                 <p className="text-gray-600 text-sm">
                   No observations yet — waiting for Kwala price updates.
@@ -291,6 +310,58 @@ export default function Dashboard() {
                     </li>
                   ))}
                 </ol>
+              )}
+            </Card>
+          </div>
+
+          {/* Decision history (on-chain rounds) */}
+          <div className="mb-4">
+            <Card title={`Decision History — on-chain rounds (${data.recentRounds.length})`}>
+              {data.recentRounds.length === 0 ? (
+                <p className="text-gray-600 text-sm">No rounds recorded yet.</p>
+              ) : (
+                <div className="overflow-x-auto -mx-5 px-5">
+                  <table className="w-full text-sm min-w-[720px]">
+                    <thead>
+                      <tr className="border-b border-gray-800">
+                        {['Round', 'Time', 'BTC Price', 'Portfolio', 'Action', 'Conf', 'Reasoning', 'Trade'].map((h) => (
+                          <th key={h} className="pb-2.5 text-left text-xs text-gray-500 font-medium pr-4 whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.recentRounds.map((r) => (
+                        <tr key={r.id} className="border-b border-gray-800/40 hover:bg-gray-800/20 transition-colors">
+                          <td className="py-2.5 pr-4 text-gray-500 font-mono text-xs">{r.id}</td>
+                          <td className="py-2.5 pr-4 text-gray-500 text-xs whitespace-nowrap">
+                            {new Date(r.timestamp * 1000).toLocaleTimeString()}
+                          </td>
+                          <td className="py-2.5 pr-4 text-gray-300 font-mono tabular-nums">
+                            {usd(r.price)}
+                          </td>
+                          <td className="py-2.5 pr-4 text-xs text-gray-400 whitespace-nowrap">
+                            <span className="text-gray-300">{usd(r.total_value_usd)}</span>
+                            <span className="text-gray-600 ml-1">({fmt(r.usdc_balance, 0)} USDC)</span>
+                          </td>
+                          <td className="py-2.5 pr-4">
+                            <ActionBadge action={r.action} />
+                          </td>
+                          <td className="py-2.5 pr-4 text-gray-400 tabular-nums">
+                            {Math.round(r.confidence * 100)}%
+                          </td>
+                          <td className="py-2.5 pr-4 text-gray-400 text-xs max-w-xs truncate">
+                            {r.reasoning}
+                          </td>
+                          <td className="py-2.5 pr-4 text-xs">
+                            {r.trade_opened
+                              ? <span className="text-blue-400 font-mono">#{r.trade_id}</span>
+                              : <span className="text-gray-600">—</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </Card>
           </div>

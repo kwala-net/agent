@@ -29,16 +29,20 @@ export async function getEthPrice(): Promise<number> {
 export async function getPortfolio(walletAddress: string): Promise<Portfolio> {
   const p = getProvider();
 
-  const [rawEth, usdc, ethPrice] = await Promise.all([
+  const [rawEth, rawUsdc, ethPrice] = await Promise.all([
     p.getBalance(walletAddress),
-    new ethers.Contract(USDC_ADDRESS, USDC_ABI, p)
-      .balanceOf(walletAddress)
-      .then((b: bigint) => Number(ethers.formatUnits(b, 6))),
+    new ethers.Contract(USDC_ADDRESS, USDC_ABI, p).balanceOf(walletAddress) as Promise<bigint>,
     getEthPrice(),
   ]);
 
   const eth_balance = parseFloat(ethers.formatEther(rawEth));
-  const total_value_usd = eth_balance * ethPrice + usdc;
+  const usdc_balance = Number(ethers.formatUnits(rawUsdc, 6));
+  const total_value_usd = eth_balance * ethPrice + usdc_balance;
 
-  return { eth_balance, usdc_balance: usdc, total_value_usd };
+  return {
+    eth_balance,
+    eth_balance_wei: rawEth.toString(),
+    usdc_balance,
+    total_value_usd,
+  };
 }

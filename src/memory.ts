@@ -1,18 +1,24 @@
 import { ethers } from 'ethers';
-import { Trade, MarketObservation } from './types';
+import { Trade, Round, MarketObservation } from './types';
 
 // ── contract read layer ───────────────────────────────────────────────────────
 
+const ROUND_TUPLE =
+  'tuple(uint256 id, uint256 timestamp, string token, uint256 price, uint256 ethBalanceWei, uint256 usdcBalance, uint256 totalValueUsd, uint8 action, uint256 amountWei, uint8 confidence, string reasoning, uint256 tradeId, bool tradeOpened)';
+
+const TRADE_TUPLE =
+  'tuple(uint256 id, uint256 roundId, address token, uint256 amountWei, uint256 entryPrice, uint256 exitPrice, int256 pnlUsdCents, uint256 openedAt, uint256 closedAt, uint8 status, uint8 confidence, string reasoning)';
+
 const ABI = [
-  'function tradesCount() view returns (uint256)',
-  'function getRecentTrades(uint256 n) view returns (tuple(uint256 id, address token, uint256 amountWei, uint256 entryPrice, uint256 exitPrice, int256 pnlUsdCents, uint256 openedAt, uint256 closedAt, uint8 status, uint8 confidence, string reasoning)[])',
-  'function getOpenTrade(address token) view returns (bool exists, tuple(uint256 id, address token, uint256 amountWei, uint256 entryPrice, uint256 exitPrice, int256 pnlUsdCents, uint256 openedAt, uint256 closedAt, uint8 status, uint8 confidence, string reasoning) trade)',
+  `function roundsCount() view returns (uint256)`,
+  `function tradesCount() view returns (uint256)`,
+  `function getRecentRounds(uint256 n) view returns (${ROUND_TUPLE}[])`,
+  `function getRecentTrades(uint256 n) view returns (${TRADE_TUPLE}[])`,
+  `function getOpenTrade(address token) view returns (bool exists, ${TRADE_TUPLE} trade)`,
 ];
 
-// Direction enum: 0=BUY 1=SELL 2=HOLD
-// Status enum:    0=OPEN 1=PENDING_CLOSE 2=CLOSED 3=FAILED
-const ACTIONS = ['BUY', 'SELL', 'HOLD'] as const;
-const STATUSES = ['open', 'pending_close', 'closed', 'failed'] as const;
+const ACTIONS   = ['BUY', 'SELL', 'HOLD'] as const;
+const STATUSES  = ['open', 'pending_close', 'closed', 'failed'] as const;
 
 let _provider: ethers.JsonRpcProvider | null = null;
 let _contract: ethers.Contract | null = null;
@@ -29,41 +35,63 @@ function contract(): ethers.Contract {
   return _contract;
 }
 
-function fromChain(raw: any): Trade {
-  const statusIdx = Number(raw.status);
-  const status = STATUSES[statusIdx] ?? 'failed';
+function fromChainRound(raw: any): Round {
+  return {
+    id:              raw.id.toString(),
+    timestamp:       Number(raw.timestamp),
+    token:           raw.token,
+    price:           Number(raw.price) / 1e8,
+    eth_balance_wei: raw.ethBalanceWei.toString(),
+    usdc_balance:    Number(raw.usdcBalance) / 1e6,
+    total_value_usd: Number(raw.totalValueUsd) / 1e8,
+    action:          ACTIONS[Number(raw.action)] ?? 'HOLD',
+    amount_eth:      parseFloat(ethers.formatEther(raw.amountWei)),
+    confidence:      Number(raw.confidence) / 100,
+    reasoning:       raw.reasoning,
+    trade_id:        raw.tradeOpened ? raw.tradeId.toString() : null,
+    trade_opened:    raw.tradeOpened,
+  };
+}
 
-  // Trades are always opened as BUY positions; status distinguishes open vs closed
-  const action = status === 'closed' ? 'SELL' : 'BUY';
+function fromChainTrade(raw: any): Trade {
+  const statusIdx = Number(raw.status);
+  const status    = STATUSES[statusIdx] ?? 'failed';
+  const action    = status === 'closed' ? 'SELL' : 'BUY';
 
   return {
-    id: raw.id.toString(),
+    id:           raw.id.toString(),
+    round_id:     raw.roundId.toString(),
     action,
-    token: raw.token,
-    amount_eth: parseFloat(ethers.formatEther(raw.amountWei)),
-    entry_price: Number(raw.entryPrice) / 1e8,
-    exit_price: raw.exitPrice > 0n ? Number(raw.exitPrice) / 1e8 : null,
-    pnl_usd: raw.pnlUsdCents !== 0n ? Number(raw.pnlUsdCents) / 100 : null,
-    timestamp: Number(raw.openedAt),
+    token:        raw.token,
+    amount_eth:   parseFloat(ethers.formatEther(raw.amountWei)),
+    entry_price:  Number(raw.entryPrice) / 1e8,
+    exit_price:   raw.exitPrice > 0n ? Number(raw.exitPrice) / 1e8 : null,
+    pnl_usd:      raw.pnlUsdCents !== 0n ? Number(raw.pnlUsdCents) / 100 : null,
+    timestamp:    Number(raw.openedAt),
     status,
-    tx_hash: null,
+    tx_hash:      null,
     llm_reasoning: raw.reasoning,
-    confidence: Number(raw.confidence) / 100,
+    confidence:   Number(raw.confidence) / 100,
   };
+}
+
+export async function getRecentRounds(n = 10): Promise<Round[]> {
+  const raws: any[] = await contract().getRecentRounds(n);
+  return raws.map(fromChainRound).reverse(); // newest first
 }
 
 export async function getRecentTrades(n = 20): Promise<Trade[]> {
   const raws: any[] = await contract().getRecentTrades(n);
-  return raws.map(fromChain).reverse(); // newest first
+  return raws.map(fromChainTrade).reverse(); // newest first
 }
 
 export async function findOpenTrade(token: string): Promise<Trade | null> {
   const [exists, raw] = await contract().getOpenTrade(token);
   if (!exists) return null;
-  return fromChain(raw);
+  return fromChainTrade(raw);
 }
 
-// ── in-memory circular buffers (prices & reasoning are ephemeral) ─────────────
+// ── in-memory circular buffers (high-frequency ephemeral data) ────────────────
 
 const _prices = new Map<string, number[]>();
 const _reasoning: string[] = [];

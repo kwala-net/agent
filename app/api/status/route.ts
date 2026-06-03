@@ -6,13 +6,14 @@ export async function GET() {
   try {
     const walletAddress = process.env.KWALA_SMART_WALLET;
 
-    const [recentTrades, recentPrices, recentReasoning, port] = await Promise.all([
+    const [recentRounds, recentTrades, recentPrices, recentReasoning, port] = await Promise.all([
+      memory.getRecentRounds(10),
       memory.getRecentTrades(20),
-      memory.getRecentPrices('ETH', 20),
+      memory.getRecentPrices('BTC', 20),
       memory.getRecentReasoning(5),
       walletAddress
         ? portfolio.getPortfolio(walletAddress)
-        : Promise.resolve({ eth_balance: 0, usdc_balance: 0, total_value_usd: 0 }),
+        : Promise.resolve({ eth_balance: 0, eth_balance_wei: '0', usdc_balance: 0, total_value_usd: 0 }),
     ]);
 
     const openTrades = recentTrades.filter(
@@ -22,6 +23,7 @@ export async function GET() {
     return NextResponse.json({
       status: 'ok',
       portfolio: port,
+      recentRounds,
       recentTrades,
       recentPrices,
       openTrades,

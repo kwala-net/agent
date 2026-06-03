@@ -8,21 +8,38 @@ export interface LLMDecision {
   reasoning: string;
 }
 
+// Mirrors TraderAgent.sol Round struct (normalized for TypeScript).
+export interface Round {
+  id: string;
+  timestamp: number;         // unix seconds
+  token: string;             // price-feed ticker, e.g. "BTC"
+  price: number;             // USD (divided by 1e8)
+  eth_balance_wei: string;   // Kwala wallet ETH in wei, as string (bigint-safe)
+  usdc_balance: number;      // USDC float (divided by 1e6)
+  total_value_usd: number;   // USD float (divided by 1e8)
+  action: TradeAction;
+  amount_eth: number;        // intended trade size
+  confidence: number;        // 0.0–1.0
+  reasoning: string;
+  trade_id: string | null;   // set if trade was opened from this round
+  trade_opened: boolean;
+}
+
 // Mirrors TraderAgent.sol Trade struct.
-// id is the on-chain array index, stored as string for consistency.
 export interface Trade {
   id: string;
+  round_id: string;           // round that opened this trade
   action: TradeAction;
   token: string;
   amount_eth: number;
   entry_price: number;
   exit_price: number | null;
   pnl_usd: number | null;
-  timestamp: number;           // unix seconds (openedAt)
+  timestamp: number;          // unix seconds (openedAt)
   status: 'open' | 'pending_close' | 'closed' | 'failed';
-  tx_hash: string | null;      // not stored on-chain; populated by /trade-fired if needed
+  tx_hash: string | null;     // not stored on-chain; populated by /trade-fired if needed
   llm_reasoning: string;
-  confidence: number;          // 0.0–1.0
+  confidence: number;         // 0.0–1.0
 }
 
 export interface MarketObservation {
@@ -34,6 +51,7 @@ export interface MarketObservation {
 
 export interface Portfolio {
   eth_balance: number;
+  eth_balance_wei: string;   // wei as string for JSON compat + contract calls
   usdc_balance: number;
   total_value_usd: number;
 }
@@ -42,7 +60,7 @@ export interface KwalaObservePayload {
   signal: string;
   token: string;
   price: string;
-  timestamp: string;
+  timestamp?: string;
 }
 
 export interface KwalaOutcomePayload {

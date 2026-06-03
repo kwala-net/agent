@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Script, console} from "forge-std/Script.sol";
-import {TraderAgent} from "../src/TraderAgent.sol";
+import {TraderAgent} from "../src/TraderAgent.sol"; // Direction, Status, Round, Trade are at file level
 
 contract DeployTraderAgent is Script {
     function run() external returns (TraderAgent traderAgent) {

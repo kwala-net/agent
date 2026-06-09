@@ -30,7 +30,9 @@ Node.js ≥ 18 required. TypeScript 5.x. Foundry required for contract work — 
 
 **Direction enum, not bool.** The contract uses `enum Direction { BUY, SELL, HOLD }`. BUY opens a position (`openTrade()` → emits `BuySignal`). SELL closes it (`emitSell()` → emits `SellSignal`). These are separate events so Kwala can use different Uniswap V3 function signatures.
 
-**Pluggable LLM.** `src/llm.ts` is a factory. It reads `LLM_PROVIDER` env var (`custom` by default, `anthropic` opt-in) and delegates to `src/providers/custom.ts` or `src/providers/anthropic.ts`. The custom provider POSTs the context payload to `CUSTOM_LLM_URL`. By default `CUSTOM_LLM_URL=http://localhost:3000/api/llm`, which hits the built-in momentum strategy in `app/api/llm/route.ts`. Point it elsewhere to use an external model.
+**Pluggable LLM.** `src/llm.ts` is a factory. It reads `LLM_PROVIDER` env var (`custom` by default, `anthropic` and `gemini` opt-in) and delegates to the matching provider module. The custom provider POSTs the context payload to `CUSTOM_LLM_URL` with no auth headers — the API key never leaves the server. By default `CUSTOM_LLM_URL=http://localhost:3000/api/llm`, which hits the built-in momentum strategy. All LLM routes (`/api/llm`, `/api/gemini`) live in the same Next.js app — no separate server needed.
+
+**Single server.** The Next.js app is the only process you run. It serves the dashboard, handles all Kwala webhooks (`/api/observe`, `/api/trade-fired`, `/api/outcome`), exposes the status API (`/api/status`), and hosts the LLM decision endpoints (`/api/llm`, `/api/gemini`). One `npm run dev` (or `npm start`) covers everything.
 
 **Owner-only contract writes.** `PRIVATE_KEY` in `.env` is the deployer EOA. Only it can call `openTrade`, `emitSell`, `closeTrade`. This is NOT the Kwala smart wallet — that wallet only executes Uniswap swaps.
 
@@ -47,9 +49,11 @@ Node.js ≥ 18 required. TypeScript 5.x. Foundry required for contract work — 
 | `app/api/outcome/route.ts` | `POST /api/outcome` — Kwala settlement webhook. Fetches exit price from Chainlink, calls `closeTrade`. |
 | `app/api/status/route.ts` | `GET /api/status` — returns portfolio, open trades, recent trades, prices, reasoning. |
 | `app/api/llm/route.ts` | `POST /api/llm` — built-in momentum strategy (stop-loss −2%, take-profit +3%, momentum BUY on 3-tick uptrend). Edit this to change strategy. |
+| `app/api/gemini/route.ts` | `POST /api/gemini` — Gemini proxy. Same payload as `/api/llm`; calls Gemini server-side using `GEMINI_API_KEY`. Callers need no auth headers. Can be used as `CUSTOM_LLM_URL`. |
 | `src/llm.ts` | Provider factory. Reads `LLM_PROVIDER`, delegates to provider module, catches errors and returns safe `HOLD`. |
-| `src/providers/custom.ts` | Default LLM provider. POSTs context to `CUSTOM_LLM_URL` via axios, no auth. |
+| `src/providers/custom.ts` | Default LLM provider. POSTs context to `CUSTOM_LLM_URL` via axios, no auth headers sent. |
 | `src/providers/anthropic.ts` | Anthropic provider. Uses `claude-opus-4-6`, 256 max tokens, JSON-only system prompt. |
+| `src/providers/gemini.ts` | Gemini provider. Uses `gemini-2.0-flash`, strips markdown fences from response, JSON-only system prompt. |
 | `src/memory.ts` | Contract read layer (`getRecentTrades`, `findOpenTrade`) + in-memory circular buffers for prices and reasoning. |
 | `src/kwala.ts` | Contract write layer. `openTrade()`, `emitSell()`, `closeTrade()` — all use ethers v6, read from env. |
 | `src/portfolio.ts` | Fetches ETH balance (via RPC) and USDC balance (via ERC-20 `balanceOf` on Sepolia USDC `0x1c7D...`). ETH price from Chainlink ETH/USD feed on Sepolia. |
@@ -64,9 +68,10 @@ Node.js ≥ 18 required. TypeScript 5.x. Foundry required for contract work — 
 
 | Variable | Default | Notes |
 |---|---|---|
-| `LLM_PROVIDER` | `custom` | `custom` or `anthropic` |
-| `CUSTOM_LLM_URL` | — | Required when `LLM_PROVIDER=custom` |
+| `LLM_PROVIDER` | `custom` | `custom`, `anthropic`, or `gemini` |
+| `CUSTOM_LLM_URL` | — | Required when `LLM_PROVIDER=custom`. Can point to `/api/llm` (momentum) or `/api/gemini` (Gemini proxy) — both in the same Next.js app |
 | `ANTHROPIC_API_KEY` | — | Required when `LLM_PROVIDER=anthropic` |
+| `GEMINI_API_KEY` | — | Required when `LLM_PROVIDER=gemini` or when `CUSTOM_LLM_URL` points to `/api/gemini` |
 | `ETH_SEPOLIA_RPC_URL` | — | Ethereum Sepolia RPC |
 | `PRIVATE_KEY` | — | Deployer EOA (not Kwala smart wallet) |
 | `TRADERAGENT_CONTRACT_ADDRESS` | — | Set after `npm run deploy:contract` |
@@ -91,6 +96,18 @@ All workflows target chainId 11155111 (Ethereum Sepolia). Chainlink `latestAnswe
 - USDC (Circle): `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238`
 - Chainlink ETH/USD feed: `0x694AA1769357215DE4FAC081bf1f309aDC325306`
 
+## LLM provider options
+
+All three options run inside the same Next.js process. No separate server required.
+
+| `LLM_PROVIDER` | How it works | Required env |
+|---|---|---|
+| `custom` (default) | POSTs trading context to `CUSTOM_LLM_URL` with no auth headers. Point to `/api/llm` for momentum strategy or `/api/gemini` for the Gemini proxy. | `CUSTOM_LLM_URL` |
+| `anthropic` | Calls Claude directly via Anthropic SDK (server-side). | `ANTHROPIC_API_KEY` |
+| `gemini` | Calls Gemini 2.0 Flash directly via Google GenAI SDK (server-side). | `GEMINI_API_KEY` |
+
+**Using `/api/gemini` as `CUSTOM_LLM_URL`** lets you call Gemini without passing any API key in the request — the key stays in `.env` on the server. Useful if you want to swap the model without changing `LLM_PROVIDER`, or if an external service needs to POST to an LLM endpoint with no auth.
+
 ## Adding a new LLM provider
 
 1. Create `src/providers/<name>.ts` exporting:
@@ -103,8 +120,9 @@ All workflows target chainId 11155111 (Ethereum Sepolia). Chainlink `latestAnswe
      recentReasoning: string[]
    ): Promise<LLMDecision>
    ```
-2. Add it to the `PROVIDERS` map in `src/llm.ts`
-3. Add `LLM_PROVIDER=<name>` as a valid value in `.env.example`
+2. Add it to the `PROVIDERS` map and `Provider` type in `src/llm.ts`
+3. Optionally create `app/api/<name>/route.ts` as a header-free proxy (same payload shape as `/api/llm`)
+4. Add the API key and `LLM_PROVIDER=<name>` to `.env.example`
 
 ## Trade lifecycle
 

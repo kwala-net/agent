@@ -1,16 +1,18 @@
 import { LLMDecision, MarketObservation, Portfolio, Trade } from './types';
 import * as custom from './providers/custom';
 import * as anthropic from './providers/anthropic';
+import * as gemini from './providers/gemini';
 
-type Provider = 'custom' | 'anthropic';
+type Provider = 'custom' | 'anthropic' | 'gemini';
 
 function activeProvider(): Provider {
   const p = (process.env.LLM_PROVIDER ?? 'custom').toLowerCase();
   if (p === 'anthropic') return 'anthropic';
+  if (p === 'gemini') return 'gemini';
   return 'custom';
 }
 
-const PROVIDERS = { custom, anthropic };
+const PROVIDERS = { custom, anthropic, gemini };
 
 export async function getTradeDecision(
   market: MarketObservation,

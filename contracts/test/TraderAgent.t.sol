@@ -6,7 +6,6 @@ import {TraderAgent, Direction, Status, Round, Trade} from "../src/TraderAgent.s
 
 contract TraderAgentTest is Test {
     TraderAgent agent;
-    address notOwner;
     address token  = address(0xBEEF);
     address token2 = address(0xCAFE);
 
@@ -17,7 +16,6 @@ contract TraderAgentTest is Test {
     event TradeClosed(uint256 indexed tradeId, uint256 exitPrice, int256 pnlUsdCents);
 
     function setUp() public {
-        notOwner = makeAddr("notOwner");
         agent = new TraderAgent();
     }
 
@@ -36,39 +34,6 @@ contract TraderAgentTest is Test {
     {
         roundId = _recordRound(Direction.BUY, amount);
         tradeId = agent.openTrade(roundId, tok, amount, 6000000000000, 75, "test reasoning");
-    }
-
-    // ── ownership ─────────────────────────────────────────────────────────────
-
-    function test_owner() public view {
-        assertEq(agent.owner(), address(this));
-    }
-
-    function test_recordRound_revertsIfNotOwner() public {
-        vm.prank(notOwner);
-        vm.expectRevert("Not owner");
-        agent.recordRound("BTC", 6000000000000, 1 ether, 500e6, 2500e8, Direction.HOLD, 0, 50, "test");
-    }
-
-    function test_openTrade_revertsIfNotOwner() public {
-        uint256 roundId = _recordRound(Direction.BUY, 1 ether);
-        vm.prank(notOwner);
-        vm.expectRevert("Not owner");
-        agent.openTrade(roundId, token, 1 ether, 6000000000000, 75, "test");
-    }
-
-    function test_emitSell_revertsIfNotOwner() public {
-        (, uint256 tradeId) = _openTrade(token, 1 ether);
-        vm.prank(notOwner);
-        vm.expectRevert("Not owner");
-        agent.emitSell(tradeId);
-    }
-
-    function test_closeTrade_revertsIfNotOwner() public {
-        (, uint256 tradeId) = _openTrade(token, 1 ether);
-        vm.prank(notOwner);
-        vm.expectRevert("Not owner");
-        agent.closeTrade(tradeId, 6100000000000, 100_00);
     }
 
     // ── recordRound ───────────────────────────────────────────────────────────

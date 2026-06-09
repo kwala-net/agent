@@ -40,6 +40,8 @@ struct Trade {
     string    reasoning;
 }
 
+// MVP: no access control — any caller can write. Add onlyOwner or a role-based
+// guard before deploying to mainnet.
 contract TraderAgent {
     // Kwala listens for these to execute swaps — signatures must not change.
     event BuySignal(uint256 indexed tradeId, address indexed token, uint256 amountWei, uint256 entryPrice);
@@ -47,22 +49,11 @@ contract TraderAgent {
     event TradeClosed(uint256 indexed tradeId, uint256 exitPrice, int256 pnlUsdCents);
     event RoundRecorded(uint256 indexed roundId, Direction indexed action, uint256 price);
 
-    address public owner;
-
     Round[] private _rounds;
     Trade[] private _trades;
 
     // token address → (tradeId + 1); 0 means no open trade for this token
     mapping(address => uint256) private _openSlot;
-
-    constructor() {
-        owner = msg.sender;
-    }
-
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Not owner");
-        _;
-    }
 
     // ── write ────────────────────────────────────────────────────────────────
 
@@ -79,7 +70,7 @@ contract TraderAgent {
         uint256   amountWei,
         uint8     confidence,
         string    calldata reasoning
-    ) external onlyOwner returns (uint256 roundId) {
+    ) external returns (uint256 roundId) {
         roundId = _rounds.length;
         _rounds.push(Round({
             id:            roundId,
@@ -107,7 +98,7 @@ contract TraderAgent {
         uint256   entryPrice,
         uint8     confidence,
         string    calldata reasoning
-    ) external onlyOwner returns (uint256 tradeId) {
+    ) external returns (uint256 tradeId) {
         require(roundId < _rounds.length, "Invalid round");
         require(_openSlot[token] == 0, "Position already open");
 
@@ -135,7 +126,7 @@ contract TraderAgent {
     }
 
     /// Marks the trade pending-close; emits SellSignal for Kwala.
-    function emitSell(uint256 tradeId) external onlyOwner {
+    function emitSell(uint256 tradeId) external {
         require(tradeId < _trades.length, "Invalid trade id");
         Trade storage t = _trades[tradeId];
         require(t.status == Status.OPEN, "Trade not open");
@@ -149,7 +140,7 @@ contract TraderAgent {
         uint256 tradeId,
         uint256 exitPrice,
         int256  pnlUsdCents
-    ) external onlyOwner {
+    ) external {
         require(tradeId < _trades.length, "Invalid trade id");
         Trade storage t = _trades[tradeId];
         require(

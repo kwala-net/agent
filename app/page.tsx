@@ -50,7 +50,6 @@ interface StatusData {
   recentTrades: Trade[];
   recentPrices: number[];
   openTrades: Trade[];
-  recentReasoning: string[];
 }
 
 const REFRESH_MS = 30_000;
@@ -294,37 +293,53 @@ export default function Dashboard() {
             </Card>
           </div>
 
-          {/* LLM reasoning */}
-          <div className="mb-4">
-            <Card title="LLM Reasoning History">
-              {data.recentReasoning.length === 0 ? (
-                <p className="text-gray-600 text-sm">No reasoning recorded yet.</p>
-              ) : (
-                <ol className="space-y-2">
-                  {data.recentReasoning.map((r, i) => (
-                    <li key={i} className="flex gap-3 text-sm">
-                      <span className="text-gray-700 font-mono shrink-0 mt-0.5 w-4 text-right">
-                        {i + 1}
-                      </span>
-                      <span className="text-gray-300">{r}</span>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </Card>
-          </div>
+          {/* Latest signal hero */}
+          {data.recentRounds.length > 0 && (() => {
+            const latest = data.recentRounds[0];
+            const heroBorder: Record<TradeAction, string> = {
+              BUY: 'border-green-700',
+              SELL: 'border-red-700',
+              HOLD: 'border-yellow-700',
+            };
+            const heroGlow: Record<TradeAction, string> = {
+              BUY: 'bg-green-900/20',
+              SELL: 'bg-red-900/20',
+              HOLD: 'bg-yellow-900/20',
+            };
+            return (
+              <div className={`mb-4 rounded-xl border ${heroBorder[latest.action]} ${heroGlow[latest.action]} p-5`}>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Latest Signal — Round #{latest.id}</span>
+                  <span className="text-xs text-gray-500">
+                    {new Date(latest.timestamp * 1000).toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex items-center gap-4 flex-wrap">
+                  <ActionBadge action={latest.action} />
+                  <span className="text-white font-mono tabular-nums text-lg font-semibold">{usd(latest.price)}</span>
+                  <span className="text-gray-400 text-sm">conf <span className="text-white font-medium">{Math.round(latest.confidence * 100)}%</span></span>
+                  {latest.trade_opened && (
+                    <span className="text-blue-400 text-sm">→ trade <span className="font-mono">#{latest.trade_id}</span></span>
+                  )}
+                </div>
+                {latest.reasoning && (
+                  <p className="mt-3 text-sm text-gray-300 italic">{latest.reasoning}</p>
+                )}
+              </div>
+            );
+          })()}
 
-          {/* Decision history (on-chain rounds) */}
+          {/* Signal feed (on-chain rounds) */}
           <div className="mb-4">
-            <Card title={`Decision History — on-chain rounds (${data.recentRounds.length})`}>
+            <Card title={`Signal Feed — agent runs (${data.recentRounds.length})`}>
               {data.recentRounds.length === 0 ? (
-                <p className="text-gray-600 text-sm">No rounds recorded yet.</p>
+                <p className="text-gray-600 text-sm">No signals yet — waiting for Kwala price updates.</p>
               ) : (
                 <div className="overflow-x-auto -mx-5 px-5">
-                  <table className="w-full text-sm min-w-[720px]">
+                  <table className="w-full text-sm min-w-[760px]">
                     <thead>
                       <tr className="border-b border-gray-800">
-                        {['Round', 'Time', 'BTC Price', 'Portfolio', 'Action', 'Conf', 'Reasoning', 'Trade'].map((h) => (
+                        {['Round', 'Date / Time', 'BTC Price', 'Portfolio', 'Signal', 'Conf', 'Reasoning', 'Trade'].map((h) => (
                           <th key={h} className="pb-2.5 text-left text-xs text-gray-500 font-medium pr-4 whitespace-nowrap">{h}</th>
                         ))}
                       </tr>
@@ -334,7 +349,10 @@ export default function Dashboard() {
                         <tr key={r.id} className="border-b border-gray-800/40 hover:bg-gray-800/20 transition-colors">
                           <td className="py-2.5 pr-4 text-gray-500 font-mono text-xs">{r.id}</td>
                           <td className="py-2.5 pr-4 text-gray-500 text-xs whitespace-nowrap">
-                            {new Date(r.timestamp * 1000).toLocaleTimeString()}
+                            {new Date(r.timestamp * 1000).toLocaleString(undefined, {
+                              month: 'short', day: 'numeric',
+                              hour: '2-digit', minute: '2-digit',
+                            })}
                           </td>
                           <td className="py-2.5 pr-4 text-gray-300 font-mono tabular-nums">
                             {usd(r.price)}
@@ -349,7 +367,7 @@ export default function Dashboard() {
                           <td className="py-2.5 pr-4 text-gray-400 tabular-nums">
                             {Math.round(r.confidence * 100)}%
                           </td>
-                          <td className="py-2.5 pr-4 text-gray-400 text-xs max-w-xs truncate">
+                          <td className="py-2.5 pr-4 text-gray-400 text-xs max-w-xs truncate" title={r.reasoning}>
                             {r.reasoning}
                           </td>
                           <td className="py-2.5 pr-4 text-xs">

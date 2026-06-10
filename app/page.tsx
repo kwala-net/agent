@@ -139,7 +139,7 @@ export default function Dashboard() {
     return () => clearInterval(id);
   }, [refresh]);
 
-  const ethPrice = data?.recentPrices?.[0] ?? 0;
+  const latestBtcPrice = data?.recentPrices?.[0] ?? 0;
   const isOnline = !error && data?.status === 'ok';
 
   return (
@@ -190,7 +190,7 @@ export default function Dashboard() {
           {/* Portfolio strip */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
             {[
-              { label: 'ETH Price', value: ethPrice ? usd(ethPrice) : '—' },
+              { label: 'BTC Price', value: latestBtcPrice ? usd(latestBtcPrice) : '—' },
               { label: 'ETH Balance', value: `${fmt(data.portfolio.eth_balance, 4)} ETH` },
               { label: 'USDC Balance', value: usd(data.portfolio.usdc_balance) },
               { label: 'Total Value', value: usd(data.portfolio.total_value_usd) },
@@ -209,17 +209,7 @@ export default function Dashboard() {
                 <p className="text-gray-600 text-sm">No open positions.</p>
               ) : (
                 <div className="space-y-3">
-                  {data.openTrades.map((t) => {
-                    const changePct =
-                      ethPrice && t.entry_price
-                        ? ((ethPrice - t.entry_price) / t.entry_price) * 100
-                        : null;
-                    const unrealizedPnl =
-                      ethPrice && t.status === 'open'
-                        ? (ethPrice - t.entry_price) * t.amount_eth
-                        : null;
-
-                    return (
+                  {data.openTrades.map((t) => (
                       <div
                         key={t.id}
                         className="bg-gray-800/60 rounded-lg p-4 border border-gray-700"
@@ -235,24 +225,6 @@ export default function Dashboard() {
                           <span className="text-white tabular-nums">{usd(t.entry_price)}</span>
                           <span className="text-gray-500">Confidence</span>
                           <span className="text-white">{Math.round(t.confidence * 100)}%</span>
-                          {unrealizedPnl !== null && (
-                            <>
-                              <span className="text-gray-500">Unrealized P&L</span>
-                              <span className="tabular-nums">
-                                <PnlCell pnl={unrealizedPnl} />
-                                {changePct !== null && (
-                                  <span
-                                    className={`ml-1 text-xs ${
-                                      changePct > 0 ? 'text-green-400' : 'text-red-400'
-                                    }`}
-                                  >
-                                    ({changePct > 0 ? '+' : ''}
-                                    {fmt(changePct, 1)}%)
-                                  </span>
-                                )}
-                              </span>
-                            </>
-                          )}
                         </div>
                         {t.llm_reasoning && (
                           <p className="mt-3 text-xs text-gray-500 italic border-t border-gray-700 pt-2">
@@ -260,8 +232,7 @@ export default function Dashboard() {
                           </p>
                         )}
                       </div>
-                    );
-                  })}
+                  ))}
                 </div>
               )}
             </Card>

@@ -227,7 +227,20 @@ Expose it publicly so Kwala can POST to your webhooks:
 ngrok http 3000
 ```
 
-### 5. Deploy Kwala workflows
+### 5. Test manually
+
+Trigger a price observation without Kwala (useful for local dev and signals-only demos):
+
+```bash
+# BTC price $60,000 — raw Chainlink value is USD × 1e8
+curl -X POST http://localhost:3000/api/observe \
+  -H "Content-Type: application/json" \
+  -d '{"signal":"6000000000000","token":"BTC","price":"6000000000000"}'
+```
+
+`signal` and `price` carry the same raw `int256` from Chainlink — `signal` is Kwala's internal trigger reference, `price` is the value the server actually uses. Both are optional to send manually; `signal` is ignored server-side.
+
+### 6. Deploy Kwala workflows
 
 Replace all placeholders in `kwala/*.yaml` and deploy via the Kwala dashboard or Kwala MCP:
 

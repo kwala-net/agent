@@ -9,7 +9,7 @@ import * as kwala from '@/src/kwala';
 const WETH = '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14';
 
 const ObserveSchema = z.object({
-  signal: z.string(),
+  signal: z.string().optional(),
   token: z.string(),
   price: z.string(),
   timestamp: z.string().optional(),

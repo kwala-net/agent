@@ -16,7 +16,9 @@ interface RequestBody {
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as RequestBody;
-    const { market, portfolio, recent_trades, last_n_prices } = body;
+    const { market, portfolio } = body;
+    const recent_trades = body.recent_trades ?? [];
+    const last_n_prices = body.last_n_prices ?? [];
 
     const price = market.current_price_usd ?? market.price;
     const prices = [price, ...last_n_prices].filter(Boolean);

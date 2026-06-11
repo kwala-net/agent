@@ -33,7 +33,8 @@ export async function getTradeDecision(
       recentReasoning
     );
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     console.error(`[llm] ${provider} error:`, err);
-    return { action: 'HOLD', token: 'ETH', amount_eth: 0, confidence: 0, reasoning: 'provider error' };
+    return { action: 'HOLD', token: 'ETH', amount_eth: 0, confidence: 0, reasoning: `provider error: ${msg}` };
   }
 }

@@ -61,8 +61,14 @@ export async function getTradeDecision(
   // Strip markdown fences if the model wraps its response
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
 
+  // Escape raw control characters inside JSON string literals (e.g. bare \n in reasoning)
+  const CTRL = { '\n': '\\n', '\r': '\\r', '\t': '\\t', '\b': '\\b', '\f': '\\f' } as Record<string, string>;
+  const sanitized = cleaned.replace(/"((?:[^"\\]|\\.)*)"/g, (match) =>
+    match.replace(/[\x00-\x1f]/g, (c) => CTRL[c] ?? `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)
+  );
+
   try {
-    return JSON.parse(cleaned) as LLMDecision;
+    return JSON.parse(sanitized) as LLMDecision;
   } catch {
     console.error('[gemini] parse error, raw:', raw);
     return { action: 'HOLD', token: 'ETH', amount_eth: 0, confidence: 0, reasoning: 'parse error' };

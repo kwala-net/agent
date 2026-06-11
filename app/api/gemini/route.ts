@@ -14,9 +14,21 @@ interface RequestBody {
   llm_reasoning_history: string[];
 }
 
+const CTRL_ESCAPES: Record<string, string> = {
+  '\n': '\\n', '\r': '\\r', '\t': '\\t', '\b': '\\b', '\f': '\\f',
+};
+
+function sanitizeJson(raw: string): string {
+  // Escape bare control characters inside JSON string literals.
+  // Structural whitespace (between tokens) is left untouched.
+  return raw.replace(/"((?:[^"\\]|\\.)*)"/g, (match) =>
+    match.replace(/[\x00-\x1f]/g, (c) => CTRL_ESCAPES[c] ?? `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as RequestBody;
+    const body = JSON.parse(sanitizeJson(await request.text())) as RequestBody;
     const { market, portfolio, recent_trades, last_n_prices, llm_reasoning_history } = body;
 
     const normalizedMarket: MarketObservation = {
@@ -36,17 +48,17 @@ export async function POST(request: NextRequest) {
     const decision: LLMDecision = await getTradeDecision(
       normalizedMarket,
       normalizedPortfolio,
-      recent_trades,
-      last_n_prices,
-      llm_reasoning_history
+      recent_trades ?? [],
+      last_n_prices ?? [],
+      llm_reasoning_history ?? []
     );
 
     return NextResponse.json(decision);
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     console.error('[api/gemini] error:', err);
     return NextResponse.json(
-      { action: 'HOLD', token: 'ETH', amount_eth: 0, confidence: 0, reasoning: 'internal error' },
-      { status: 500 }
+      { action: 'HOLD', token: 'ETH', amount_eth: 0, confidence: 0, reasoning: `gemini error: ${msg}` }
     );
   }
 }

@@ -53,7 +53,7 @@ Node.js ≥ 18 required. TypeScript 5.x. Foundry required for contract work — 
 | `src/llm.ts` | Provider factory. Reads `LLM_PROVIDER`, delegates to provider module, catches errors and returns safe `HOLD`. |
 | `src/providers/custom.ts` | Default LLM provider. POSTs context to `CUSTOM_LLM_URL` via axios, no auth headers sent. |
 | `src/providers/anthropic.ts` | Anthropic provider. Uses `claude-opus-4-6`, 256 max tokens, JSON-only system prompt. |
-| `src/providers/gemini.ts` | Gemini provider. Uses `gemini-2.0-flash`, strips markdown fences from response, JSON-only system prompt. |
+| `src/providers/gemini.ts` | Gemini provider. Uses `gemini-2.5-flash`, strips markdown fences from response, JSON-only system prompt. |
 | `src/memory.ts` | Contract read layer (`getRecentTrades`, `findOpenTrade`) + in-memory circular buffers for prices and reasoning. |
 | `src/kwala.ts` | Contract write layer. `openTrade()`, `emitSell()`, `closeTrade()`, `recordRound()` — all use ethers v6, read from env. |
 | `src/portfolio.ts` | Fetches ETH balance (via RPC) and USDC balance (via ERC-20 `balanceOf` on Sepolia USDC `0x1c7D...`). ETH price from Chainlink ETH/USD feed on Sepolia. |

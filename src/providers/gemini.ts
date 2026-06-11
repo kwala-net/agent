@@ -11,6 +11,10 @@ and your trade history. Think about momentum, recent P&L, and open positions.
 Never risk more than 10% of total portfolio value in a single trade.
 Never open a new BUY if there is already an open position.
 
+If portfolio is zero, assume portfolio value is 100 USD. If there are no past trades,
+take a decision based on the BTC price trend. Try not to say HOLD. Use common trading patterns to make
+a BUY or SELL decision ideally.
+
 Respond ONLY with valid JSON — no prose, no markdown fences:
 {
   "action": "BUY" | "SELL" | "HOLD",

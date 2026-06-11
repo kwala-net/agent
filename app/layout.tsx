@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Trader Agent',
+  title: 'Kwala Agent',
   description: 'Autonomous crypto trading agent on Ethereum Sepolia',
 };
 

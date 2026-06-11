@@ -139,7 +139,7 @@ export default function Dashboard() {
     return () => clearInterval(id);
   }, [refresh]);
 
-  const latestBtcPrice = data?.recentPrices?.[0] ?? 0;
+  const latestBtcPrice = data?.recentRounds?.[0]?.price ?? 0;
   const isOnline = !error && data?.status === 'ok';
 
   return (
@@ -147,7 +147,7 @@ export default function Dashboard() {
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Trader Agent</h1>
+          <h1 className="text-2xl font-bold text-white">Kwala Agent</h1>
           <p className="text-gray-500 text-sm mt-0.5">Ethereum Sepolia · chainId 11155111</p>
         </div>
         <div className="flex items-center gap-4 pt-1">

@@ -48,6 +48,10 @@ contract TraderAgent {
     event SellSignal(uint256 indexed tradeId, address indexed token, uint256 amountWei, uint256 entryPrice);
     event TradeClosed(uint256 indexed tradeId, uint256 exitPrice, int256 pnlUsdCents);
     event RoundRecorded(uint256 indexed roundId, Direction indexed action, uint256 price);
+    // Kwala's trader-observe-btc workflow listens for this to trigger /api/observe.
+    event PriceUpdated(uint256 indexed oldPrice, uint256 indexed newPrice);
+
+    uint256 public lastBtcPrice;
 
     Round[] private _rounds;
     Trade[] private _trades;
@@ -56,6 +60,14 @@ contract TraderAgent {
     mapping(address => uint256) private _openSlot;
 
     // ── write ────────────────────────────────────────────────────────────────
+
+    /// Called by /api/updateprice. Stores the latest BTC price and emits
+    /// PriceUpdated so the trader-observe-btc Kwala workflow fires /api/observe.
+    function updatePrice(uint256 newPrice) external {
+        uint256 old = lastBtcPrice;
+        lastBtcPrice = newPrice;
+        emit PriceUpdated(old, newPrice);
+    }
 
     /// Records one full observe→decide cycle on-chain.
     /// Called by the server after fetching a price and getting an LLM decision,

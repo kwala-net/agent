@@ -1,31 +1,23 @@
 Name: trader-observe-btc
 
-# Cron: runs every hour, reads latestAnswer() from the Chainlink BTC/USD feed on Sepolia,
-# then POSTs the result to the agent server.
+# Event-driven: fires whenever TraderAgent emits PriceUpdated.
+# Passes the new BTC price to /api/observe, which runs the LLM decision loop.
 #
-# Chainlink BTC/USD (Sepolia): 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43
-# latestAnswer() returns:
-#   re.result(0) = answer (int256) — BTC price in USD×1e8
+# PriceUpdated(uint256 indexed oldPrice, uint256 indexed newPrice)
+#   re.result(0) = oldPrice (USD×1e8)
+#   re.result(1) = newPrice (USD×1e8)
 
 Trigger:
-  RepeatEvery: interval
-  IntervalSeconds: 3600
+  EventSignature: "PriceUpdated(uint256,uint256)"
+  ContractAddress: "REPLACE_WITH_TRADERAGENT_CONTRACT_ADDRESS"
+  ChainID: 11155111
 
 Actions:
-  - Name: FetchBtcPrice
-    Type: call
-    TargetContract: "0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43"
-    TargetFunction: "latestAnswer()"
-    ChainID: 11155111
-
   - Name: NotifyAgentServer
     Type: post
     APIEndpoint: "https://REPLACE_WITH_YOUR_SERVER_URL/api/observe"
     APIPayload:
-      signal: "price_update"
+      signal: "re.result(0)"
       token: "BTC"
-      price: "re.result(0)"
+      price: "re.result(1)"
     RetriesUntilSuccess: 3
-
-Execution:
-  Mode: sequential

@@ -1,0 +1,33 @@
+Name: trader-price-oracle
+
+# Cron: runs every hour, reads latestAnswer() from the Chainlink BTC/USD feed on Sepolia,
+# then POSTs the raw price to /api/updateprice.
+#
+# /api/updateprice calls updatePrice() on TraderAgent, which emits PriceUpdated(oldPrice, newPrice).
+# The trader-observe-btc workflow listens for that event and fires /api/observe.
+#
+# Chainlink BTC/USD (Sepolia): 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43
+# latestAnswer() returns:
+#   re.result(0) = answer (int256) — BTC price in USD×1e8
+
+Trigger:
+  RepeatEvery: interval
+  IntervalSeconds: 3600
+
+Actions:
+  - Name: FetchBtcPrice
+    Type: call
+    TargetContract: "0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43"
+    TargetFunction: "latestAnswer()"
+    ChainID: 11155111
+
+  - Name: PushPriceToContract
+    Type: post
+    APIEndpoint: "https://REPLACE_WITH_YOUR_SERVER_URL/api/updateprice"
+    APIPayload:
+      signal: "price_oracle"
+      price: "re.result(0)"
+    RetriesUntilSuccess: 3
+
+Execution:
+  Mode: sequential

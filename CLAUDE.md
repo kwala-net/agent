@@ -2,7 +2,7 @@
 
 ## What this project is
 
-A 24/7 autonomous crypto trading agent on Ethereum Sepolia (chainId 11155111). Kwala runs four on-chain workflows autonomously. The Next.js app receives webhooks from Kwala via API routes, calls a pluggable LLM for decisions, renders a live dashboard, and writes all trade state back to a Solidity contract (`TraderAgent.sol`) that acts as the on-chain database.
+A 24/7 autonomous crypto trading agent on Ethereum Sepolia (chainId 11155111). Kwala runs five on-chain workflows autonomously. The Next.js app receives webhooks from Kwala via API routes, calls a pluggable LLM for decisions, renders a live dashboard, and writes all trade state back to a Solidity contract (`TraderAgent.sol`) that acts as the on-chain database.
 
 ## Commands
 
@@ -44,7 +44,8 @@ Node.js ≥ 18 required. TypeScript 5.x. Foundry required for contract work — 
 |---|---|
 | `app/page.tsx` | Dashboard. Client component; polls `/api/status` every 30s. Shows portfolio, open positions, price ticks, LLM reasoning, trades table. |
 | `app/layout.tsx` | Root layout with dark background and metadata. |
-| `app/api/observe/route.ts` | `POST /api/observe` — Kwala price oracle webhook. Saves observation, calls LLM, opens/closes trades. |
+| `app/api/updateprice/route.ts` | `POST /api/updateprice` — receives raw Chainlink price from Kwala cron, calls `updatePrice()` on contract (emits `PriceUpdated`). |
+| `app/api/observe/route.ts` | `POST /api/observe` — triggered by Kwala on `PriceUpdated` event. Saves observation, calls LLM, opens/closes trades. |
 | `app/api/trade-fired/route.ts` | `POST /api/trade-fired` — Kwala swap-submitted confirmation. Logs acknowledgement. |
 | `app/api/outcome/route.ts` | `POST /api/outcome` — Kwala settlement webhook. Fetches exit price from Chainlink, calls `closeTrade`. |
 | `app/api/status/route.ts` | `GET /api/status` — returns portfolio, open trades, recent trades, prices, reasoning. |
@@ -55,7 +56,7 @@ Node.js ≥ 18 required. TypeScript 5.x. Foundry required for contract work — 
 | `src/providers/anthropic.ts` | Anthropic provider. Uses `claude-opus-4-6`, 256 max tokens, JSON-only system prompt. |
 | `src/providers/gemini.ts` | Gemini provider. Uses `gemini-2.0-flash`, strips markdown fences from response, JSON-only system prompt. |
 | `src/memory.ts` | Contract read layer (`getRecentTrades`, `findOpenTrade`) + in-memory circular buffers for prices and reasoning. |
-| `src/kwala.ts` | Contract write layer. `openTrade()`, `emitSell()`, `closeTrade()` — all use ethers v6, read from env. |
+| `src/kwala.ts` | Contract write layer. `updatePrice()`, `openTrade()`, `emitSell()`, `closeTrade()` — all use ethers v6, read from env. |
 | `src/portfolio.ts` | Fetches ETH balance (via RPC) and USDC balance (via ERC-20 `balanceOf` on Sepolia USDC `0x1c7D...`). ETH price from Chainlink ETH/USD feed on Sepolia. |
 | `src/types.ts` | Shared interfaces: `Trade`, `LLMDecision`, `MarketObservation`, `Portfolio`, Kwala payload types. |
 | `contracts/src/TraderAgent.sol` | On-chain trade DB. Solidity 0.8.20. |
@@ -80,14 +81,15 @@ Node.js ≥ 18 required. TypeScript 5.x. Foundry required for contract work — 
 
 ## Kwala workflow summary
 
-| Workflow file | Trigger event | Action |
+| Workflow file | Trigger | Action |
 |---|---|---|
-| `trader-observe-btc.yaml` | Cron every 1 hour — calls `latestAnswer()` on Chainlink BTC/USD feed | POST to `/api/observe` |
+| `trader-price-oracle.yaml` | Cron every 1 hour — calls `latestAnswer()` on Chainlink BTC/USD feed | POST to `/api/updateprice` → `updatePrice()` on contract → emits `PriceUpdated` |
+| `trader-observe-btc.yaml` | `PriceUpdated(uint256,uint256)` on TraderAgent contract | POST to `/api/observe` with `price=re.result(1)` (newPrice) |
 | `trader-execute-buy.yaml` | `BuySignal(uint256,address,uint256,uint256)` | `exactInputSingle` on Uniswap V3, POST to `/api/trade-fired` |
 | `trader-execute-sell.yaml` | `SellSignal(uint256,address,uint256,uint256)` | `exactInputSingle` on Uniswap V3, POST to `/api/trade-fired` |
 | `trader-outcome.yaml` | Token movement on Kwala smart wallet | POST to `/api/outcome` |
 
-All workflows target chainId 11155111 (Ethereum Sepolia). Chainlink `latestAnswer()` returns a single `int256` referenced as `re.result(0)`. The `/api/observe` route divides the raw answer by 1e8 to get the USD price. `timestamp` is optional in the observe payload — the server uses `Date.now()` if omitted.
+All workflows target chainId 11155111 (Ethereum Sepolia). `re.result(0)` in Kwala refers to the first return value of a call or the first indexed topic of an event. For `PriceUpdated`: `re.result(0)` = oldPrice, `re.result(1)` = newPrice (both USD×1e8). The `/api/observe` route divides the raw price by 1e8 to get the USD price.
 
 ## Contract addresses (Ethereum Sepolia)
 

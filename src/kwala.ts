@@ -5,11 +5,13 @@ const DIRECTION: Record<TradeAction, number> = { BUY: 0, SELL: 1, HOLD: 2 };
 
 const ABI = [
   // write
+  'function updatePrice(uint256 newPrice) external',
   'function recordRound(string token, uint256 price, uint256 ethBalanceWei, uint256 usdcBalance, uint256 totalValueUsd, uint8 action, uint256 amountWei, uint8 confidence, string reasoning) external returns (uint256)',
   'function openTrade(uint256 roundId, address token, uint256 amountWei, uint256 entryPrice, uint8 confidence, string reasoning) external returns (uint256)',
   'function emitSell(uint256 tradeId) external',
   'function closeTrade(uint256 tradeId, uint256 exitPrice, int256 pnlUsdCents) external',
   // events
+  'event PriceUpdated(uint256 indexed oldPrice, uint256 indexed newPrice)',
   'event RoundRecorded(uint256 indexed roundId, uint8 indexed action, uint256 price)',
   'event BuySignal(uint256 indexed tradeId, address indexed token, uint256 amountWei, uint256 entryPrice)',
   'event SellSignal(uint256 indexed tradeId, address indexed token, uint256 amountWei, uint256 entryPrice)',
@@ -41,6 +43,15 @@ function parseEvent(logs: readonly ethers.Log[], name: string): ethers.LogDescri
     } catch { /* skip unrelated logs */ }
   }
   return null;
+}
+
+/// Stores the latest BTC price on-chain and emits PriceUpdated.
+/// Called by /api/updateprice (triggered by the trader-price-oracle Kwala workflow).
+export async function updatePrice(rawPrice: bigint): Promise<void> {
+  console.log(`[kwala] updatePrice raw=${rawPrice}`);
+  const tx = await contract().updatePrice(rawPrice);
+  const receipt = await tx.wait();
+  console.log(`[kwala] PriceUpdated tx=${receipt.hash}`);
 }
 
 /// Records one full observe→decide cycle on-chain.

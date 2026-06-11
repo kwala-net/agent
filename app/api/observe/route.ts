@@ -62,8 +62,10 @@ export async function POST(request: NextRequest) {
       }
     } else if (decision.action === 'SELL') {
       const open = await memory.findOpenTrade(WETH);
-      if (open) {
+      if (open && open.status === 'open') {
         await kwala.emitSell(Number(open.id));
+      } else if (open) {
+        console.log(`[observe] SELL skipped — trade id=${open.id} already ${open.status}`);
       } else {
         console.log('[observe] SELL skipped — no open trade found');
       }

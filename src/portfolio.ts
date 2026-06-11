@@ -2,8 +2,9 @@ import { ethers } from 'ethers';
 import { Portfolio } from './types';
 
 // Sepolia addresses
-const USDC_ADDRESS = '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238';
-const ETH_USD_FEED = '0x694AA1769357215DE4FAC081bf1f309aDC325306';
+const USDC_ADDRESS  = '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238';
+const ETH_USD_FEED  = '0x694AA1769357215DE4FAC081bf1f309aDC325306';
+const BTC_USD_FEED  = '0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43';
 
 const USDC_ABI = ['function balanceOf(address) view returns (uint256)'];
 const CHAINLINK_ABI = [
@@ -22,6 +23,13 @@ function getProvider(): ethers.JsonRpcProvider {
 export async function getEthPrice(): Promise<number> {
   const p = getProvider();
   const feed = new ethers.Contract(ETH_USD_FEED, CHAINLINK_ABI, p);
+  const [, answer] = await feed.latestRoundData();
+  return Number(answer) / 1e8;
+}
+
+export async function getBtcPrice(): Promise<number> {
+  const p = getProvider();
+  const feed = new ethers.Contract(BTC_USD_FEED, CHAINLINK_ABI, p);
   const [, answer] = await feed.latestRoundData();
   return Number(answer) / 1e8;
 }

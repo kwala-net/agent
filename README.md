@@ -95,17 +95,14 @@ A 24/7 autonomous crypto trading agent on Ethereum Sepolia. Kwala handles all on
 
 ---
 
-## Five Kwala workflows
+## Four Kwala workflows
 
 | File | Trigger | What it does |
 |---|---|---|
-| `kwala/trader-price-oracle.yaml` | Cron every 1 hour | Calls `latestAnswer()` on Chainlink BTC/USD (Sepolia), POSTs raw price to `/api/updateprice` |
-| `kwala/trader-observe-btc.yaml` | `PriceUpdated` event on TraderAgent | POSTs new BTC price to `/api/observe` to run the LLM decision loop |
+| `kwala/trader-observe-btc.yaml` | Cron every 1 hour | POSTs to `/api/observe`; server fetches BTC/USD price from Chainlink directly |
 | `kwala/trader-execute-buy.yaml` | `BuySignal` event from TraderAgent | `exactInputSingle` USDC→WETH on Uniswap V3 via Kwala smart wallet |
 | `kwala/trader-execute-sell.yaml` | `SellSignal` event from TraderAgent | `exactInputSingle` WETH→USDC on Uniswap V3 via Kwala smart wallet |
 | `kwala/trader-outcome.yaml` | Token movement on Kwala smart wallet | POSTs settlement data to `/api/outcome` |
-
-The price flow is: **Chainlink → `/api/updateprice` → `updatePrice()` on-chain → `PriceUpdated` event → `/api/observe` → LLM decision → trade**. Splitting into two workflows means the on-chain price record is independent of the LLM call, and any system listening to `PriceUpdated` gets the canonical price.
 
 ---
 
@@ -136,7 +133,6 @@ struct Trade {
 ```
 
 **Events** (Kwala listens for these — signatures must not change):
-- `PriceUpdated(oldPrice, newPrice)` — emitted by `updatePrice()`; triggers observe-btc workflow
 - `BuySignal(tradeId, token, amountWei, entryPrice)` — triggers execute-buy workflow
 - `SellSignal(tradeId, token, amountWei, entryPrice)` — triggers execute-sell workflow
 - `RoundRecorded(roundId, action, price)` — emitted on every tick
@@ -236,13 +232,12 @@ ngrok http 3000
 Trigger a price observation without Kwala (useful for local dev and signals-only demos):
 
 ```bash
-# BTC price $60,000 — raw Chainlink value is USD × 1e8
 curl -X POST http://localhost:3000/api/observe \
   -H "Content-Type: application/json" \
-  -d '{"signal":"6000000000000","token":"BTC","price":"6000000000000"}'
+  -d '{"signal":"cron_tick","token":"BTC"}'
 ```
 
-`signal` and `price` carry the same raw `int256` from Chainlink — `signal` is Kwala's internal trigger reference, `price` is the value the server actually uses. Both are optional to send manually; `signal` is ignored server-side.
+No price needed — the server fetches BTC/USD directly from the Chainlink feed on Sepolia. `signal` and `token` are both optional; omitting them is fine too.
 
 ### 6. Deploy Kwala workflows
 

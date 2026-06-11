@@ -10,7 +10,6 @@ contract TraderAgentTest is Test {
     address token2 = address(0xCAFE);
 
     // Redeclare events for vm.expectEmit
-    event PriceUpdated(uint256 indexed oldPrice, uint256 indexed newPrice);
     event RoundRecorded(uint256 indexed roundId, Direction indexed action, uint256 price);
     event BuySignal(uint256 indexed tradeId, address indexed token, uint256 amountWei, uint256 entryPrice);
     event SellSignal(uint256 indexed tradeId, address indexed token, uint256 amountWei, uint256 entryPrice);
@@ -35,32 +34,6 @@ contract TraderAgentTest is Test {
     {
         roundId = _recordRound(Direction.BUY, amount);
         tradeId = agent.openTrade(roundId, tok, amount, 6000000000000, 75, "test reasoning");
-    }
-
-    // ── updatePrice ──────────────────────────────────────────────────────────
-
-    function test_updatePrice_storesPrice() public {
-        agent.updatePrice(6000000000000);
-        assertEq(agent.lastBtcPrice(), 6000000000000);
-    }
-
-    function test_updatePrice_emitsPriceUpdated() public {
-        agent.updatePrice(6000000000000);
-        vm.expectEmit(true, true, false, false);
-        emit PriceUpdated(6000000000000, 6100000000000);
-        agent.updatePrice(6100000000000);
-    }
-
-    function test_updatePrice_oldPriceIsZeroOnFirstCall() public {
-        vm.expectEmit(true, true, false, false);
-        emit PriceUpdated(0, 6000000000000);
-        agent.updatePrice(6000000000000);
-    }
-
-    function test_updatePrice_tracksConsecutivePrices() public {
-        agent.updatePrice(6000000000000);
-        agent.updatePrice(6100000000000);
-        assertEq(agent.lastBtcPrice(), 6100000000000);
     }
 
     // ── recordRound ───────────────────────────────────────────────────────────
